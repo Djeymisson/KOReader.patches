@@ -1,47 +1,46 @@
-# 📚 KOReader Custom Patches
+# KOReader Custom Patches
 
-Este repositório contém **patches modificados** para o [KOReader](https://github.com/koreader/koreader) que adaptei e testei de acordo com minhas necessidades pessoais de uso.
+This repository contains **modified patches** for [KOReader](https://github.com/koreader/koreader) that I have adapted and tested for my personal use.
 
-> **Aviso:** Nenhum destes patches foi criado inteiramente por mim. Todos foram **baseados em trabalhos de outros desenvolvedores**, aos quais dou o devido crédito.
-
----
-
-## Objetivo
-
-Essas modificações têm como objetivo:
-
-- Personalizar o comportamento e a aparência de certos recursos do KOReader;
-- Corrigir pequenos bugs encontrados nas versões originais dos patches;
-- Adaptar o funcionamento para uso em dispositivos específicos;
-- Integrar ideias de diferentes versões compartilhadas por outros usuários.
+> **Disclaimer:** These patches are not my original creations. They are **modifications based on the work of other developers**, to whom I give full credit. I have adapted them to fit my specific needs.
 
 ---
 
-## Patches incluídos
+## Purpose of These Modifications
 
-| Arquivo | Descrição | Base / Crédito |
-|----------|------------|----------------|
-| `2-reader-header-footer.lua` | Exibe cabeçalho e rodapé configuráveis com informações do livro, status e progresso de leitura. | Baseado no patch original de [Joshua Cant](https://github.com/joshuacant/KOReader.patches) e nas alterações compartilhadas por [Isaac_729](https://www.reddit.com/user/Isaac_729/). |
-| `2-sleep-overlay.lua` | Aplica uma imagem de sobreposição aleatória à tela de descanso, permitindo ajustar o modo de redimensionamento das imagens. | Baseado no patch original de [omer-faruq](https://github.com/omer-faruq/koreader-user-patches.git) |
+The goal of these modifications is to:
 
----
-
-## Como aplicar (pode variar de acordo com o patch)
-
-1. Baixe ou clone este repositório:
-
-   ```bash
-   git clone https://github.com/Djeymisson/KOReader.patches.git
-   ```
-
-2. Copie os arquivos `.lua` desejados para a pasta `patches/` do seu KOReader.
-3. Reinicie o KOReader ou use o comando interno de recarregamento de patches (quando disponível).
+* Customize the behavior and appearance of certain KOReader features.
+* Fix minor bugs I encountered in the original patch versions.
+* Adapt functionality for my specific devices.
+* Integrate ideas and features from different versions shared by other users.
 
 ---
 
-## Licença
+## Included Patches
 
-Os arquivos aqui seguem as licenças originais dos patches dos quais derivam.  
-Modificações pessoais são compartilhadas sob a mesma licença para manter a compatibilidade (ex.: **GPLv3**).
+| File | Description | Base / Credit |
+| :--- | :--- | :--- |
+| [2-reader-header-footer.lua](https://github.com/Djeymisson/KOReader.patches/blob/main/2-reader-header-footer.lua) | Displays a configurable header and footer with book info, status, and reading progress. Includes a settings menu. | Based on the original patch by [Joshua Cant](https://github.com/joshuacant/KOReader.patches) and modifications shared by [Isaac_729](https://www.reddit.com/user/Isaac_729/). |
+| [2-sleep-overlay.lua](https://github.com/Djeymisson/KOReader.patches/blob/main/2-reader-header-footer.lua) | Applies a random overlay image to the sleep screen. Includes a settings menu to adjust the image resize mode. | Based on the original patch by [omer-faruq](https://github.com/omer-faruq/koreader-user-patches.git). |
 
-> *Este é um repositório pessoal de testes e adaptações. Use por sua conta e risco.*
+---
+
+## Installation
+
+1. Clone or download this repository:
+
+    ```bash
+    git clone [https://github.com/Djeymisson/KOReader.patches.git](https://github.com/Djeymisson/KOReader.patches.git)
+    ```
+
+2. Copy the `.lua` files you want to use into your KOReader `patches/` directory.
+3. Restart KOReader to apply the patches.
+
+---
+
+## License
+
+These files follow the original licenses of the patches they are derived from (e.g., **GPLv3**). My modifications are shared under the same license to maintain compatibility.
+
+> **Note:** This is a personal repository for testing and adaptation. Use at your own risk.
