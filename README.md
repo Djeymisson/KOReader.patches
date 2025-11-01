@@ -22,7 +22,7 @@ The goal of these modifications is to:
 | File | Description | Base / Credit |
 | :--- | :--- | :--- |
 | [2-reader-header-footer.lua](https://github.com/Djeymisson/KOReader.patches/blob/main/2-reader-header-footer.lua) | Displays a configurable header and footer with book info, status, and reading progress. Includes a settings menu. | Based on the original patch by [Joshua Cant](https://github.com/joshuacant/KOReader.patches) and modifications shared by [Isaac_729](https://www.reddit.com/user/Isaac_729/). |
-| [2-sleep-overlay.lua](https://github.com/Djeymisson/KOReader.patches/blob/main/2-reader-header-footer.lua) | Applies a random overlay image to the sleep screen. Includes a settings menu to adjust the image resize mode. | Based on the original patch by [omer-faruq](https://github.com/omer-faruq/koreader-user-patches.git). |
+| [2-sleep-overlay.lua](https://github.com/Djeymisson/KOReader.patches/blob/main/2-sleep-overlay.lua) | Applies a random overlay image to the sleep screen. Includes a settings menu to adjust the image resize mode. | Based on the original patch by [omer-faruq](https://github.com/omer-faruq/koreader-user-patches.git). |
 
 ---
 
