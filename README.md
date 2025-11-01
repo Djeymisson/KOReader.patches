@@ -26,16 +26,10 @@ The goal of these modifications is to:
 
 ---
 
-## Installation
+## Usage
 
-1. Clone or download this repository:
-
-    ```bash
-    git clone [https://github.com/Djeymisson/KOReader.patches.git](https://github.com/Djeymisson/KOReader.patches.git)
-    ```
-
-2. Copy the `.lua` files you want to use into your KOReader `patches/` directory.
-3. Restart KOReader to apply the patches.
+1. Copy the `.lua` files you want to use into your KOReader `patches/` directory.
+2. Restart KOReader to apply the patches.
 
 ---
 
