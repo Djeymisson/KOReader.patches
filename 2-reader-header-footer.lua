@@ -88,7 +88,7 @@ local function resolveFontSize(size_name)
     end
 end
 
--- (NEW) Creates a standardized TextWidget for the header/footer
+-- Creates a standardized TextWidget for the header/footer
 local function createTextWidget(text, face_obj, is_bold, color)
     return TextWidget:new{
         text = BD.auto(text or ""),
@@ -98,7 +98,7 @@ local function createTextWidget(text, face_obj, is_bold, color)
     }
 end
 
--- (NEW) Creates a HorizontalGroup with margins and dynamic spacing
+-- Creates a HorizontalGroup with margins and dynamic spacing
 local function createPaddedRow(left_widget, right_widget, left_margin, right_margin, screen_w)
     local left_w = left_widget:getSize().w or 0
     local right_w = right_widget:getSize().w or 0
@@ -441,7 +441,7 @@ function ReaderView:paintTo(bb, x, y)
     local screen_w = Device.screen:getWidth()
     local screen_h = Device.screen:getHeight()
 
-    -- (NEW) Reusable font object
+    -- Reusable font object
     local font_face_obj = Font:getFace(font_face_name, font_size)
 
     -- 4. Data collection
