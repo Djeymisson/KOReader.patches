@@ -46,7 +46,9 @@ local math_abs = math.abs
 local SETTINGS_KEY = "sleep_overlay_settings"
 local defaults = {
     enable_overlay = true,
-    overlay_resize_mode = "stretch" -- "fit", "fill", "center", "stretch"
+    overlay_resize_mode = "stretch", -- "fit", "fill", "center", "stretch"
+    overlay_order_mode = "random", -- "random", "sequential"
+    last_overlay_index = 0
 }
 
 local function getSettings()
@@ -70,7 +72,7 @@ end
 local function buildMenu(reader_ui)
     local s = getSettings()
 
-    -- "fit", "fill", "center", "stretch"
+    -- Resize Mode Options
     local resize_options = {"fit", "fill", "center", "stretch"}
     local resize_options_text = {
         fit = _("Fit to screen"),
@@ -79,15 +81,38 @@ local function buildMenu(reader_ui)
         stretch = _("Stretch to fill screen")
     }
 
-    local sub_item_table = {}
+    local resize_sub_item_table = {}
     for _, mode in ipairs(resize_options) do
-        table.insert(sub_item_table, {
+        table.insert(resize_sub_item_table, {
             text = resize_options_text[mode] or mode,
             checked_func = function()
                 return (s.overlay_resize_mode or defaults.overlay_resize_mode) == mode
             end,
             callback = function()
                 s.overlay_resize_mode = mode
+                saveSettings(s)
+            end
+        })
+    end
+
+    -- Order Mode Options
+    local order_mode_options = {"random", "sequential"}
+    local order_mode_options_text = {
+        random = _("Random"),
+        sequential = _("Sequential")
+    }
+
+    local order_sub_item_table = {}
+    for _, mode in ipairs(order_mode_options) do
+        table.insert(order_sub_item_table, {
+            text = order_mode_options_text[mode] or mode,
+            checked_func = function()
+                return (s.overlay_order_mode or defaults.overlay_order_mode) == mode
+            end,
+            callback = function()
+                s.overlay_order_mode = mode
+                -- Reset the index when changing modes
+                s.last_overlay_index = 0
                 saveSettings(s)
             end
         })
@@ -104,7 +129,13 @@ local function buildMenu(reader_ui)
         end
     }, {
         text = _("Overlay resize mode"),
-        sub_item_table = sub_item_table,
+        sub_item_table = resize_sub_item_table,
+        enabled_func = function()
+            return s.enable_overlay
+        end
+    }, {
+        text = _("Overlay order"),
+        sub_item_table = order_sub_item_table,
         enabled_func = function()
             return s.enable_overlay
         end
@@ -171,6 +202,8 @@ local function refreshOverlayList()
         end
     end
 
+    table.sort(overlay_candidates)
+
     if #overlay_candidates == 0 then
         overlay_candidates = nil
         logger.dbg("SleepOverlay: no PNG overlays in", overlay_dir)
@@ -184,9 +217,30 @@ local function pickOverlayPath()
     if not overlay_candidates then
         return nil
     end
-    seedRandom()
-    local idx = math.random(#overlay_candidates)
-    return overlay_candidates[idx]
+
+    local s = getSettings()
+    local order_mode = s.overlay_order_mode or defaults.overlay_order_mode
+    local total_candidates = #overlay_candidates
+    local overlay_path
+
+    if order_mode == "sequential" then
+        local last_index = s.last_overlay_index or 0
+        -- Calculate next index in a circular manner
+        local next_index = (last_index % total_candidates) + 1
+
+        overlay_path = overlay_candidates[next_index]
+
+        -- Save the new index
+        s.last_overlay_index = next_index
+        saveSettings(s)
+    else
+        -- Random mode
+        seedRandom()
+        local idx = math.random(total_candidates)
+        overlay_path = overlay_candidates[idx]
+    end
+
+    return overlay_path
 end
 
 local function ensureBaseImage(self)
@@ -308,11 +362,11 @@ local function composeOverlay(self)
     local resize_mode = s.overlay_resize_mode or defaults.overlay_resize_mode
     resize_mode = type(resize_mode) == "string" and resize_mode:lower() or "fit"
 
-    -- 3. (REFACTORED) Resize Overlay
+    -- 3. Resize Overlay
     overlay_bb = _resizeOverlay(overlay_bb, base_w, base_h, resize_mode)
     local overlay_w, overlay_h = overlay_bb:getWidth(), overlay_bb:getHeight()
 
-    -- 4. (REFACTORED) Get Blit Coordinates
+    -- 4. Get Blit Coordinates
     local dest_x, dest_y, src_x, src_y, width, height = _getBlitCoords(base_w, base_h, overlay_w, overlay_h)
 
     if width <= 0 or height <= 0 then
