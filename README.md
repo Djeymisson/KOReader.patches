@@ -26,7 +26,7 @@ The goal of these modifications is to:
 
 ---
 
-## Usage
+## Applying Patches
 
 1. Copy the `.lua` files you want to use into your KOReader `patches/` directory.
 2. Restart KOReader to apply the patches.
