@@ -496,6 +496,10 @@ local function add_options_in(menu)
         callback = function(touchmenu_instance)
             G_reader_settings:flipNilOrFalse("screensaver_invert_message_color")
             touchmenu_instance:updateItems()
+        end,
+        help_text = _("This option will only become available, if you have selected 'No fill'."),
+        enabled_func = function()
+            return G_reader_settings:readSetting("screensaver_img_background") == "none"
         end
     })
 end
