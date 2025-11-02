@@ -34,6 +34,7 @@ local FLATTEN_ALPHA_COLOR = Blitbuffer.COLOR_WHITE
 
 -- Module state
 local overlay_candidates
+local overlay_basenames
 local random_seeded
 
 -- Math optimizations
@@ -46,9 +47,11 @@ local math_abs = math.abs
 local SETTINGS_KEY = "sleep_overlay_settings"
 local defaults = {
     enable_overlay = true,
-    overlay_resize_mode = "stretch", -- "fit", "fill", "center", "stretch"
-    overlay_order_mode = "random", -- "random", "sequential"
-    last_overlay_index = 0
+    overlay_scaling_mode = "stretch", -- "fit", "fill", "center", "stretch"
+    overlay_rotation_mode = "random", -- "random", "sequential"
+    last_overlay_index = 0,
+    selection_mode = "all", -- "all", "selected"
+    enabled_overlays = {} -- stores [basename] = true
 }
 
 local function getSettings()
@@ -66,111 +69,6 @@ local function saveSettings(s)
 end
 
 ------------------------------------------------------------
--- MENU INTEGRATION
-------------------------------------------------------------
-
-local function buildMenu(reader_ui)
-    local s = getSettings()
-
-    -- Resize Mode Options
-    local resize_options = {"fit", "fill", "center", "stretch"}
-    local resize_options_text = {
-        fit = _("Fit to screen"),
-        fill = _("Fill screen (keep aspect ratio)"),
-        center = _("Center (original size)"),
-        stretch = _("Stretch to fill screen")
-    }
-
-    local resize_sub_item_table = {}
-    for _, mode in ipairs(resize_options) do
-        table.insert(resize_sub_item_table, {
-            text = resize_options_text[mode] or mode,
-            checked_func = function()
-                return (s.overlay_resize_mode or defaults.overlay_resize_mode) == mode
-            end,
-            callback = function()
-                s.overlay_resize_mode = mode
-                saveSettings(s)
-            end
-        })
-    end
-
-    -- Order Mode Options
-    local order_mode_options = {"random", "sequential"}
-    local order_mode_options_text = {
-        random = _("Random"),
-        sequential = _("Sequential")
-    }
-
-    local order_sub_item_table = {}
-    for _, mode in ipairs(order_mode_options) do
-        table.insert(order_sub_item_table, {
-            text = order_mode_options_text[mode] or mode,
-            checked_func = function()
-                return (s.overlay_order_mode or defaults.overlay_order_mode) == mode
-            end,
-            callback = function()
-                s.overlay_order_mode = mode
-                -- Reset the index when changing modes
-                s.last_overlay_index = 0
-                saveSettings(s)
-            end
-        })
-    end
-
-    local submenu = {{
-        text = _("Sleep Overlay"),
-        checked_func = function()
-            return s.enable_overlay
-        end,
-        callback = function()
-            s.enable_overlay = not s.enable_overlay
-            saveSettings(s)
-        end
-    }, {
-        text = _("Overlay resize mode"),
-        sub_item_table = resize_sub_item_table,
-        enabled_func = function()
-            return s.enable_overlay
-        end
-    }, {
-        text = _("Overlay order"),
-        sub_item_table = order_sub_item_table,
-        enabled_func = function()
-            return s.enable_overlay
-        end
-    }}
-
-    return {
-        text_func = function()
-            return _("Sleep Overlay")
-        end,
-        sub_item_table = submenu
-    }
-end
-
--- Generic patch function
-local function patch(menu, order)
-    table.insert(order.screen, "----------------------------")
-    table.insert(order.screen, "sleep_overlay")
-    menu.menu_items.sleep_overlay = buildMenu(menu.ui)
-end
-
--- Apply the patch to the File Manager menu
-local orig_FileManagerMenu_setUpdateItemTable = FileManagerMenu.setUpdateItemTable
-function FileManagerMenu:setUpdateItemTable()
-    patch(self, require("ui/elements/filemanager_menu_order"))
-    orig_FileManagerMenu_setUpdateItemTable(self)
-end
-
--- Apply the patch to the Reader menu
-local orig_ReaderMenu_setUpdateItemTable = ReaderMenu.setUpdateItemTable
-function ReaderMenu:setUpdateItemTable()
-    patch(self, require("ui/elements/reader_menu_order"))
-    orig_ReaderMenu_setUpdateItemTable(self)
-end
-
-------------------------------------------------------------
 -- OVERLAY LOGIC (HELPERS)
 ------------------------------------------------------------
 
@@ -183,6 +81,7 @@ end
 
 local function refreshOverlayList()
     overlay_candidates = {}
+    overlay_basenames = {}
     local attr = lfs.attributes(overlay_dir, "mode")
     if attr ~= "directory" then
         logger.dbg("SleepOverlay: overlay directory not found", overlay_dir)
@@ -197,47 +96,76 @@ local function refreshOverlayList()
                 local suffix = util.getFileNameSuffix(entry)
                 if suffix and suffix:lower() == "png" then
                     table.insert(overlay_candidates, full)
+                    table.insert(overlay_basenames, entry)
                 end
             end
         end
     end
 
+    -- Ensures alphabetical order for sequential mode and menu
     table.sort(overlay_candidates)
+    table.sort(overlay_basenames)
 
     if #overlay_candidates == 0 then
         overlay_candidates = nil
+        overlay_basenames = nil
         logger.dbg("SleepOverlay: no PNG overlays in", overlay_dir)
     end
 end
 
 local function pickOverlayPath()
+    -- Updates the file list if it hasn't been loaded yet
     if not overlay_candidates then
         refreshOverlayList()
     end
+    -- If there are still no candidates, return nil
     if not overlay_candidates then
         return nil
     end
 
     local s = getSettings()
-    local order_mode = s.overlay_order_mode or defaults.overlay_order_mode
-    local total_candidates = #overlay_candidates
+    local active_candidates = {}
+
+    -- 1. Filter the list of candidates
+    if s.selection_mode == "selected" and s.enabled_overlays then
+        -- Selected mode: goes through the list of file names
+        for i, basename in ipairs(overlay_basenames) do
+            if s.enabled_overlays[basename] then
+                -- If the basename is enabled, add the corresponding full path
+                table.insert(active_candidates, overlay_candidates[i])
+            end
+        end
+    else
+        -- "All" mode: uses the full list
+        active_candidates = overlay_candidates
+    end
+
+    -- 2. Check if there are any active candidates
+    if #active_candidates == 0 then
+        logger.dbg("SleepOverlay: no active overlays found or selected")
+        return nil
+    end
+
+    -- 3. Apply the order logic (random/sequential) to the filtered list
+    local order_mode = s.overlay_rotation_mode or defaults.overlay_rotation_mode
+    local total_candidates = #active_candidates
     local overlay_path
 
     if order_mode == "sequential" then
         local last_index = s.last_overlay_index or 0
-        -- Calculate next index in a circular manner
+        -- Calculate the next index, wrapping around to 1 if at the end
         local next_index = (last_index % total_candidates) + 1
 
-        overlay_path = overlay_candidates[next_index]
+        overlay_path = active_candidates[next_index]
 
         -- Save the new index
         s.last_overlay_index = next_index
         saveSettings(s)
     else
-        -- Random mode
+        -- Random mode (original)
         seedRandom()
         local idx = math.random(total_candidates)
-        overlay_path = overlay_candidates[idx]
+        overlay_path = active_candidates[idx]
     end
 
     return overlay_path
@@ -359,7 +287,7 @@ local function composeOverlay(self)
 
     -- 2. Get Dimensions
     local base_w, base_h = base_bb:getWidth(), base_bb:getHeight()
-    local resize_mode = s.overlay_resize_mode or defaults.overlay_resize_mode
+    local resize_mode = s.overlay_scaling_mode or defaults.overlay_scaling_mode
     resize_mode = type(resize_mode) == "string" and resize_mode:lower() or "fit"
 
     -- 3. Resize Overlay
@@ -483,4 +411,172 @@ local orig_cleanup = Screensaver.cleanup
 function Screensaver:cleanup()
     self._sleep_overlay_applied = nil
     return orig_cleanup(self)
+end
+
+------------------------------------------------------------
+-- MENU INTEGRATION
+------------------------------------------------------------
+
+local function buildMenu(reader_ui)
+    local s = getSettings()
+
+    -- Calls the function to ensure the file list is loaded
+    refreshOverlayList()
+
+    local submenu = {}
+    if overlay_basenames and #overlay_basenames > 0 then
+
+        -- 1. Submenu: Scaling Mode
+        local scaling_options = {"fit", "fill", "center", "stretch"}
+        local scaling_options_text = {
+            fit = _("Fit to screen"),
+            fill = _("Fill screen (keep aspect ratio)"),
+            center = _("Center (original size)"),
+            stretch = _("Stretch to fill screen")
+        }
+
+        local scaling_sub_item_table = {}
+        for _, mode in ipairs(scaling_options) do
+            table.insert(scaling_sub_item_table, {
+                text = scaling_options_text[mode] or mode,
+                checked_func = function()
+                    return (s.overlay_scaling_mode or defaults.overlay_scaling_mode) == mode
+                end,
+                callback = function()
+                    s.overlay_scaling_mode = mode
+                    saveSettings(s)
+                end
+            })
+        end
+
+        -- 2. Submenu: Rotation Mode
+        local rotation_mode_options = {"random", "sequential"}
+        local rotation_mode_options_text = {
+            random = _("Random"),
+            sequential = _("Sequential")
+        }
+
+        local rotation_sub_item_table = {}
+        for _, mode in ipairs(rotation_mode_options) do
+            table.insert(rotation_sub_item_table, {
+                text = rotation_mode_options_text[mode] or mode,
+                checked_func = function()
+                    return (s.overlay_rotation_mode or defaults.overlay_rotation_mode) == mode
+                end,
+                callback = function()
+                    s.overlay_rotation_mode = mode
+                    -- Reset the index when changing modes
+                    s.last_overlay_index = 0
+                    saveSettings(s)
+                end
+            })
+        end
+
+        -- 3. Submenu: Active Overlays
+        local selection_sub_item_table = {}
+
+        table.insert(selection_sub_item_table, {
+            text = _("Use all overlays"),
+            checked_func = function()
+                return (s.selection_mode or defaults.selection_mode) == "all"
+            end,
+            callback = function()
+                s.selection_mode = "all"
+                s.enabled_overlays = {} -- Clear selected overlays
+                saveSettings(s)
+            end,
+            enabled_func = function()
+                return #overlay_basenames > 1
+            end
+        })
+
+        if not s.enabled_overlays then
+            s.enabled_overlays = {}
+        end
+
+        -- Dynamically add files from the overlay directory
+        for _, basename in ipairs(overlay_basenames) do
+            table.insert(selection_sub_item_table, {
+                text = basename:gsub("%.png$", ""), -- Show the name without .png
+                -- Check the checkbox if it's in the enabled list
+                checked_func = function()
+                    return s.enabled_overlays[basename] == true or (s.selection_mode or defaults.selection_mode) ==
+                               "all"
+                end,
+                callback = function()
+                    s.selection_mode = "selected"
+                    s.enabled_overlays[basename] = not s.enabled_overlays[basename]
+                    saveSettings(s)
+                end,
+                enabled_func = function()
+                    return #overlay_basenames > 1
+                end
+            })
+        end
+
+        -- 4. Main Menu Item
+        submenu = {{
+            text = _("Sleep Overlay"),
+            checked_func = function()
+                return s.enable_overlay
+            end,
+            callback = function()
+                s.enable_overlay = not s.enable_overlay
+                saveSettings(s)
+            end
+        }, {
+            text = _("Active Overlays"),
+            sub_item_table = selection_sub_item_table,
+            enabled_func = function()
+                return s.enable_overlay
+            end
+        }, {
+            text = _("Scaling Mode"),
+            sub_item_table = scaling_sub_item_table,
+            enabled_func = function()
+                return s.enable_overlay
+            end
+        }, {
+            text = _("Rotation Mode"),
+            sub_item_table = rotation_sub_item_table,
+            enabled_func = function()
+                return s.enable_overlay
+            end
+        }}
+
+    else
+        -- Message if no files are found
+        table.insert(submenu, {
+            text = _("No overlays found in 'sleepoverlays' folder"),
+            enabled = false
+        })
+    end
+
+    return {
+        text_func = function()
+            return _("Sleep Overlay")
+        end,
+        sub_item_table = submenu
+    }
+end
+
+-- Generic patch function
+local function patch(menu, order)
+    table.insert(order.screen, "----------------------------")
+    table.insert(order.screen, "sleep_overlay")
+    menu.menu_items.sleep_overlay = buildMenu(menu.ui)
+end
+
+-- Apply the patch to the File Manager menu
+local orig_FileManagerMenu_setUpdateItemTable = FileManagerMenu.setUpdateItemTable
+function FileManagerMenu:setUpdateItemTable()
+    patch(self, require("ui/elements/filemanager_menu_order"))
+    orig_FileManagerMenu_setUpdateItemTable(self)
+end
+
+-- Apply the patch to the Reader menu
+local orig_ReaderMenu_setUpdateItemTable = ReaderMenu.setUpdateItemTable
+function ReaderMenu:setUpdateItemTable()
+    patch(self, require("ui/elements/reader_menu_order"))
+    orig_ReaderMenu_setUpdateItemTable(self)
 end
