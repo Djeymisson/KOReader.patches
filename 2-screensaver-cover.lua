@@ -418,6 +418,15 @@ local function find_item_from_path(menu, ...)
     return item
 end
 
+-- Helper function to check if the 'Message do not overlap' option should be enabled
+local function isMessageOverlapToggleEnabled()
+    local screensaver_type = G_reader_settings:readSetting("screensaver_type")
+    local message_pos = G_reader_settings:readSetting("screensaver_message_vertical_position")
+    return G_reader_settings:readSetting("screensaver_show_message") and
+               (screensaver_type == "cover" or screensaver_type == "random_image") and
+               (message_pos == 100 or message_pos == 0) -- 100=top, 0=bottom
+end
+
 -- Add the new options to the "Sleep screen" submenu
 local function add_options_in(menu)
     local items = menu.sub_item_table
@@ -456,13 +465,7 @@ local function add_options_in(menu)
         text = _("Message do not overlap image"),
         help_text = _(
             "This option will only become available, if you have selected a cover or a random image and you have a message and the message position is 'top' or 'bottom'."),
-        enabled_func = function()
-            local screensaver_type = G_reader_settings:readSetting("screensaver_type")
-            local message_pos = G_reader_settings:readSetting("screensaver_message_vertical_position")
-            return G_reader_settings:readSetting("screensaver_show_message") and
-                       (screensaver_type == "cover" or screensaver_type == "random_image") and
-                       (message_pos == 100 or message_pos == 0) -- 100=top, 0=bottom
-        end,
+        enabled_func = isMessageOverlapToggleEnabled,
         checked_func = function()
             return G_reader_settings:nilOrFalse("screensaver_overlap_message")
         end,
@@ -475,7 +478,7 @@ local function add_options_in(menu)
         text = _("Center image"),
         help_text = _("This option will only become available, if you have selected 'Message do not overlap image'."),
         enabled_func = function()
-            return G_reader_settings:nilOrFalse("screensaver_overlap_message")
+            return isMessageOverlapToggleEnabled() and G_reader_settings:nilOrFalse("screensaver_overlap_message")
         end,
         checked_func = function()
             return G_reader_settings:isTrue("screensaver_center_image")
