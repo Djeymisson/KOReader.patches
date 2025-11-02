@@ -1,39 +1,52 @@
--- Add 4 new options @ the end of the "Sleep screen" menu :
--- Close widgets before showing the screensaver
--- Refresh before showing the screensaver
--- Message do not overlap image
--- Center image
--- By default it doesn't change the sleep screen behavior
+--[[
+    Screensaver Patch
+    Adds 5 new options to the "Sleep screen" menu:
+    1. Close widgets before showing the screensaver
+    2. Refresh before showing the screensaver
+    3. Message do not overlap image
+    4. Center image
+    5. Invert message color when no fill
+
+    This patch overrides the Screensaver.show() function and adds
+    items to the Reader and File Manager menus.
+]] -- Core/Device
+local Device = require("device")
+local Screen = Device.screen
 local Blitbuffer = require("ffi/blitbuffer")
-local BookStatusWidget = require("ui/widget/bookstatuswidget")
+local Geom = require("ui/geometry")
+local Size = require("ui/size")
+local Font = require("ui/font")
+
+-- UI/Widgets
 local BottomContainer = require("ui/widget/container/bottomcontainer")
 local CenterContainer = require("ui/widget/container/centercontainer")
-local Device = require("device")
-local Font = require("ui/font")
-local FrameContainer = require("ui/widget/container/framecontainer")
-local Geom = require("ui/geometry")
-local ImageWidget = require("ui/widget/imagewidget")
-local InfoMessage = require("ui/widget/infomessage")
-local OverlapGroup = require("ui/widget/overlapgroup")
-local ReaderUI = require("apps/reader/readerui")
-local RenderImage = require("ui/renderimage")
-local ScreenSaverLockWidget = require("ui/widget/screensaverlockwidget")
-local ScreenSaverWidget = require("ui/widget/screensaverwidget")
-local Screensaver = require("ui/screensaver")
-local Size = require("ui/size")
-local TextBoxWidget = require("ui/widget/textboxwidget")
 local TopContainer = require("ui/widget/container/topcontainer")
-local UIManager = require("ui/uimanager")
+local FrameContainer = require("ui/widget/container/framecontainer")
+local OverlapGroup = require("ui/widget/overlapgroup")
 local VerticalGroup = require("ui/widget/verticalgroup")
 local VerticalSpan = require("ui/widget/verticalspan")
+local ImageWidget = require("ui/widget/imagewidget")
+local TextBoxWidget = require("ui/widget/textboxwidget")
+local InfoMessage = require("ui/widget/infomessage")
+local BookStatusWidget = require("ui/widget/bookstatuswidget")
+local ScreenSaverWidget = require("ui/widget/screensaverwidget")
+local ScreenSaverLockWidget = require("ui/widget/screensaverlockwidget")
+local UIManager = require("ui/uimanager")
+
+-- Libs/Utils
 local ffiUtil = require("ffi/util")
 local util = require("util")
-local Screen = Device.screen
+local logger = require("logger")
+local lfs = require("libs/libkoreader-lfs")
 local _ = require("gettext")
 
-local logger = require("logger")
+-- App Specific
+local ReaderUI = require("apps/reader/readerui")
+local RenderImage = require("ui/renderimage")
+local DocumentRegistry = require("document/documentregistry")
+local Screensaver = require("ui/screensaver")
 
--- default value, for new menu entries
+-- Default values for the new patch menu entries
 if G_reader_settings:hasNot("screensaver_close_widgets_when_no_fill") then
     G_reader_settings:saveSetting("screensaver_close_widgets_when_no_fill", false)
 end
@@ -46,22 +59,23 @@ end
 if G_reader_settings:hasNot("screensaver_refresh") then
     G_reader_settings:saveSetting("screensaver_refresh", true)
 end
-
 if G_reader_settings:hasNot("screensaver_invert_message_color") then
     G_reader_settings:saveSetting("screensaver_invert_message_color", false)
 end
 
 local userpatch = require("userpatch")
+-- Get a reference to the local function 'addOverlayMessage' from the original Screensaver.show
 local addOverlayMessage = userpatch.getUpValue(Screensaver.show, "addOverlayMessage")
 
+-- Override the original Screensaver.show function
 Screensaver.show = function(self)
-    -- Notify Device methods that we're in screen saver mode, so they know whether to suspend or resume on Power events.
+    -- Original code: Notify Device methods that we're in screensaver mode
     Device.screen_saver_mode = true
 
-    -- Check if we requested a lock gesture
+    -- Original code: Check for gesture lock
     local with_gesture_lock = Device:isTouchDevice() and G_reader_settings:readSetting("screensaver_delay") == "gesture"
 
-    -- in as-is mode with no message, no overlay and no lock, we've got nothing to show :)
+    -- Original code: If there's nothing to show, return
     if self.screensaver_type == "disable" and not self.show_message and not self.overlay_message and
         not with_gesture_lock then
         return
@@ -69,23 +83,16 @@ Screensaver.show = function(self)
 
     local rotation_mode = Screen:getRotationMode()
 
-    -- We mostly always suspend in Portrait/Inverted Portrait mode...
-    -- ... except when we just show an InfoMessage or when the screensaver
-    -- is disabled, as it plays badly with Landscape mode (c.f., #4098 and #5920).
-    -- We also exclude full-screen widgets that work fine in Landscape mode,
-    -- like ReadingProgress and BookStatus (c.f., #5724)
+    -- Original code: Screen rotation logic for portrait mode
     if self:modeExpectsPortrait() then
         Device.orig_rotation_mode = rotation_mode
-        -- Leave Portrait & Inverted Portrait alone, that works just fine.
         if bit.band(Device.orig_rotation_mode, 1) == 1 then
-            -- i.e., only switch to Portrait if we're currently in *any* Landscape orientation (odd number)
             Screen:setRotationMode(Screen.DEVICE_ROTATED_UPRIGHT)
         else
             Device.orig_rotation_mode = nil
         end
 
-        -- On eInk, if we're using a screensaver mode that shows an image,
-        -- flash the screen to white first, to eliminate ghosting.
+        -- Patch modification: Allow disabling the refresh
         if G_reader_settings:readSetting("screensaver_refresh") then
             if Device:hasEinkScreen() and self:modeIsImage() then
                 if self:withBackground() then
@@ -93,35 +100,34 @@ Screensaver.show = function(self)
                 end
                 Screen:refreshFull(0, 0, Screen:getWidth(), Screen:getHeight())
 
-                -- On Kobo, on sunxi SoCs with a recent kernel, wait a tiny bit more to avoid weird refresh glitches...
                 if Device:isKobo() and Device:isSunxi() then
                     ffiUtil.usleep(150 * 1000)
                 end
             end
         end
     else
-        -- nil it, in case user switched ScreenSaver modes during our lifetime.
         Device.orig_rotation_mode = nil
     end
 
-    -- Assume that we'll be covering the full-screen by default (either because of a widget, or a background fill).
     local covers_fullscreen = true
-    -- Speaking of, set that background fill up...
     local background
+    -- Patch modification: Define text/background colors
     local fgcolor, bgcolor = Blitbuffer.COLOR_BLACK, Blitbuffer.COLOR_WHITE
     if self.screensaver_background == "black" then
         background = Blitbuffer.COLOR_BLACK
-        bgcolor = background -- text follow the same color scheme
+        bgcolor = background -- text follows the color scheme
         fgcolor = Blitbuffer.COLOR_WHITE
     elseif self.screensaver_background == "white" then
         background = Blitbuffer.COLOR_WHITE
     elseif self.screensaver_background == "none" then
         background = nil
+        -- Patch modification: Allow inverting message color
         if G_reader_settings:isTrue("screensaver_invert_message_color") then
             fgcolor, bgcolor = bgcolor, fgcolor
         end
     end
 
+    -- Original code: Adjust for night mode
     if G_reader_settings:isTrue("night_mode") then
         fgcolor, bgcolor = bgcolor, fgcolor
     end
@@ -129,42 +135,45 @@ Screensaver.show = function(self)
     local is_cover_or_image = self.screensaver_type == "cover" or self.screensaver_type == "random_image"
     local message_height
     local message_widget
+    -- Patch modification: Define 'overlap_message' based on new settings
     local overlap_message = true
     local is_message_top = false
     if self.show_message then
-        -- Handle user settings & fallbacks, with that prefix mess on top...
+        -- Original code: Logic to get the message text
         local screensaver_message = self.default_screensaver_message
         if G_reader_settings:has(self.prefix .. "screensaver_message") then
             screensaver_message = G_reader_settings:readSetting(self.prefix .. "screensaver_message")
         elseif G_reader_settings:has("screensaver_message") then
             screensaver_message = G_reader_settings:readSetting("screensaver_message")
         end
-        -- If the message is set to the defaults (which is also the case when it's unset), prefer the event message if there is one.
         if screensaver_message == self.default_screensaver_message then
             if self.event_message then
                 screensaver_message = self.event_message
-                -- The overlay is only ever populated with the event message, and we only want to show it once ;).
                 self.overlay_message = nil
             end
         end
 
-        -- NOTE: Only attempt to expand if there are special characters in the message.
+        -- Original code: Expand variables in the message string (e.g., %percentage)
         if screensaver_message:find("%%") then
             screensaver_message = self.ui.bookinfo:expandString(screensaver_message) or self.event_message or
                                       self.default_screensaver_message
         end
 
-        if G_reader_settings:has(self.prefix .. "screensaver_message_position") then
-            message_pos = G_reader_settings:readSetting(self.prefix .. "screensaver_message_position")
+        -- Original code: Get message position
+        if G_reader_settings:has(self.prefix .. "screensaver_message_vertical_position") then
+            message_pos = G_reader_settings:readSetting(self.prefix .. "screensaver_message_vertical_position")
         else
-            message_pos = G_reader_settings:readSetting("screensaver_message_position")
+            message_pos = G_reader_settings:readSetting("screensaver_message_vertical_position")
         end
 
+        -- Patch modification: Message layout logic
         local face = Font:getFace("infofont")
         local screen_w = Screen:getWidth()
         local container
-        local is_message_middle = message_pos == "middle"
-        local textbox = TextBoxWidget:new{ -- might need its height
+        local is_message_middle = message_pos == 50
+        local is_message_top = message_pos == 100
+
+        local textbox = TextBoxWidget:new{
             text = screensaver_message,
             face = face,
             width = is_message_middle and math.floor(screen_w * 2 / 3) or screen_w,
@@ -172,11 +181,10 @@ Screensaver.show = function(self)
             fgcolor = fgcolor,
             bgcolor = bgcolor
         }
-        is_message_top = message_pos == "top"
         container = is_message_middle and CenterContainer or (is_message_top and TopContainer or BottomContainer)
         overlap_message = not is_cover_or_image or G_reader_settings:readSetting("screensaver_overlap_message")
         if is_message_middle then
-            overlap_message = true
+            overlap_message = true -- Middle always overlaps
         end
         local height = overlap_message and Screen:getHeight() or textbox:getSize().h
         message_widget = container:new{
@@ -198,79 +206,100 @@ Screensaver.show = function(self)
             }
         }
 
-        -- Forward the height of the top message to the overlay widget
         if is_message_top then
             message_height = message_widget[1]:getSize().h
         end
-        -- end
     end
 
-    -- Build the main widget for the effective mode, all the sanity checks were handled in setup
+    -- Build the main widget
     local widget = nil
     local center_image = false
     if is_cover_or_image then
+        -- Patch modification: Logic to adjust image height if message does not overlap
         local image_height = Screen:getHeight()
         if not overlap_message then
             center_image = G_reader_settings:readSetting("screensaver_center_image")
             image_height = image_height - message_widget[1]:getSize().h * (center_image and 2 or 1)
         end
 
+        -- Simplified scale factor logic (uses original 'stretch_images' only)
+        local scale_factor_value = G_reader_settings:isFalse("screensaver_stretch_images") and 0 or nil
+
         local widget_settings = {
             width = Screen:getWidth(),
             height = image_height,
-            scale_factor = G_reader_settings:isFalse("screensaver_stretch_images") and 0 or nil,
+            scale_factor = scale_factor_value,
             stretch_limit_percentage = G_reader_settings:readSetting("screensaver_stretch_limit_percentage")
         }
-        if self.image then
+
+        -- Simplified image loading logic
+        if self.image_file then
+            -- MODE A: Random Image or image-based book (CBZ)
+            widget_settings.file = self.image_file
+            widget_settings.file_do_cache = false
+            widget_settings.alpha = true
+        elseif self.image then
+            -- MODE B: EPUB/PDF Cover (pre-rendered thumbnail)
             widget_settings.image = self.image
             widget_settings.image_disposable = true
-        elseif self.image_file then
-            if G_reader_settings:isTrue("screensaver_rotate_auto_for_best_fit") then
-                -- We need to load the image here to determine whether to rotate
-                if util.getFileNameSuffix(self.image_file) == "svg" then
-                    widget_settings.image = RenderImage:renderSVGImageFile(self.image_file, nil, nil, 1)
-                else
-                    widget_settings.image = RenderImage:renderImageFile(self.image_file, false, nil, nil)
-                end
-                if not widget_settings.image then
-                    widget_settings.image = RenderImage:renderCheckerboard(Screen:getWidth(), Screen:getHeight(),
-                        Screen.bb:getType())
-                end
-                widget_settings.image_disposable = true
-            else
-                widget_settings.file = self.image_file
-                widget_settings.file_do_cache = false
-            end
-            widget_settings.alpha = true
-        end -- set cover or file
-        if G_reader_settings:isTrue("screensaver_rotate_auto_for_best_fit") then
-            local angle = rotation_mode == 3 and 180 or 0 -- match mode if possible
-            if (widget_settings.image:getWidth() < widget_settings.image:getHeight()) ~=
-                (widget_settings.width < widget_settings.height) then
-                angle = angle + (G_reader_settings:isTrue("imageviewer_rotation_landscape_invert") and -90 or 90)
-            end
-            widget_settings.rotation_angle = angle
         end
+
+        -- Original code: Auto-Rotation Logic
+        if G_reader_settings:isTrue("screensaver_rotate_auto_for_best_fit") then
+            if widget_settings.file then
+                -- Rotation for MODE A (file-based)
+                local file_to_check = widget_settings.file
+                local temp_image
+
+                if self.screensaver_type == "cover" and self.ui.bookinfo and
+                    not DocumentRegistry:isImageFile(file_to_check) then
+                    temp_image = self.ui.bookinfo:getCoverImage(self.ui.document, file_to_check)
+                elseif util.getFileNameSuffix(file_to_check) == "svg" then
+                    temp_image = RenderImage:renderSVGImageFile(file_to_check, nil, nil, 1)
+                elseif DocumentRegistry:isImageFile(file_to_check) then
+                    temp_image = RenderImage:renderImageFile(file_to_check, false, nil, nil)
+                end
+
+                if temp_image then
+                    local angle = rotation_mode == 3 and 180 or 0
+                    if (temp_image:getWidth() < temp_image:getHeight()) ~=
+                        (widget_settings.width < widget_settings.height) then
+                        angle = angle +
+                                    (G_reader_settings:isTrue("imageviewer_rotation_landscape_invert") and -90 or 90)
+                    end
+                    widget_settings.rotation_angle = angle
+                    temp_image:free()
+                end
+
+            elseif widget_settings.image then
+                -- Rotation for MODE B (image buffer/thumbnail-based)
+                local temp_image = widget_settings.image
+                local angle = rotation_mode == 3 and 180 or 0
+                if (temp_image:getWidth() < temp_image.getHeight()) ~= (widget_settings.width < widget_settings.height) then
+                    angle = angle + (G_reader_settings:isTrue("imageviewer_rotation_landscape_invert") and -90 or 90)
+                end
+                widget_settings.rotation_angle = angle
+            end
+        end
+
         widget = ImageWidget:new(widget_settings)
     elseif self.screensaver_type == "bookstatus" then
-        local ReaderUI = require("apps/reader/readerui")
         widget = BookStatusWidget:new{
-            ui = ReaderUI.instance,
+            ui = self.ui,
             readonly = true
         }
     elseif self.screensaver_type == "readingprogress" then
-        widget = Screensaver.getReaderProgress()
+        widget = self.ui.statistics:onShowReaderProgress(true)
     end
 
     if self.show_message then
-        -- The only case where we *won't* cover the full-screen is when we only display a message and no background.
         if widget == nil and self.screensaver_background == "none" then
             covers_fullscreen = false
         end
-        -- Check if message_widget should be overlaid on another widget
+
         if message_widget then
-            if widget then -- We have a Screensaver widget
-                -- Show message_widget depending on overlap_message and center_image
+            if widget then -- There is a screensaver widget (image/status)
+                -- Assemble the layout (Vertical or Overlap)
                 local group_settings
                 local group_type
 
@@ -302,7 +331,7 @@ Screensaver.show = function(self)
                 }
                 widget = group_type:new(group_settings)
             else
-                -- No previously created widget, so just show message widget
+                -- No previous widget, just show the message
                 widget = message_widget
             end
         end
@@ -311,9 +340,10 @@ Screensaver.show = function(self)
     -- NOTE: Make sure InputContainer gestures are not disabled, to prevent stupid interactions with UIManager on close.
     UIManager:setIgnoreTouchInput(false)
 
-    if self.screensaver_background == "none" and is_cover_or_image then -- is the background kept ?
-        if G_reader_settings:readSetting("screensaver_close_widgets_when_no_fill") then -- !!!!!!!!!
-            -- clear highlight
+    -- Logic to close widgets
+    if self.screensaver_background == "none" and is_cover_or_image then
+        if G_reader_settings:readSetting("screensaver_close_widgets_when_no_fill") then
+            -- Clear highlights
             local readerui = ReaderUI.instance
             if readerui and readerui.highlight then
                 readerui.highlight:clear(readerui.highlight:getClearId())
@@ -321,14 +351,15 @@ Screensaver.show = function(self)
 
             local added = {}
             local widgets = {}
-            for widget in UIManager:topdown_widgets_iter() do -- populate bottom up with unique widgets (eg. keyboard appears several times)
-                if not added[widget] then -- already added ?
+            -- Iterate over widgets to close popups, etc.
+            for widget in UIManager:topdown_widgets_iter() do
+                if not added[widget] then
                     table.insert(widgets, widget)
                     added[widget] = true
                 end
             end
-            table.remove(widgets) -- remove the main widget @ the end of the stack, we don't want to close it
-            if #widgets >= 1 then -- close all the remaining ones and repaint
+            table.remove(widgets) -- Remove the main widget (FileManager or ReaderUI)
+            if #widgets >= 1 then
                 for _, widget in ipairs(widgets) do
                     UIManager:close(widget, "fast")
                 end
@@ -337,10 +368,12 @@ Screensaver.show = function(self)
         end
     end
 
+    -- Add overlay message (e.g., "shutting down")
     if self.overlay_message then
         widget = addOverlayMessage(widget, message_height, self.overlay_message)
     end
 
+    -- Show the final screensaver widget
     if widget then
         self.screensaver_widget = ScreenSaverWidget:new{
             widget = widget,
@@ -353,22 +386,19 @@ Screensaver.show = function(self)
         UIManager:show(self.screensaver_widget, "full")
     end
 
-    -- Setup the gesture lock through an additional invisible widget, so that it works regardless of the configuration.
+    -- Show the gesture lock widget
     if with_gesture_lock then
         self.screensaver_lock_widget = ScreenSaverLockWidget:new{}
-
-        -- It's flagged as modal, so it'll stay on top
         UIManager:show(self.screensaver_lock_widget)
     end
 end
 
+-- Helper function to find menu items
 local function find_item_from_path(menu, ...)
     local function find_sub_item(sub_items, text)
-        -- logger.info("search item", text)
         for _, item in ipairs(sub_items) do
             local item_text = item.text or (item.text_func and item.text_func())
             if item_text and item_text == text then
-                -- logger.info("Found item", item_text)
                 return item
             end
         end
@@ -388,6 +418,7 @@ local function find_item_from_path(menu, ...)
     return item
 end
 
+-- Add the new options to the "Sleep screen" submenu
 local function add_options_in(menu)
     local items = menu.sub_item_table
     items[#items].separator = true
@@ -427,10 +458,10 @@ local function add_options_in(menu)
             "This option will only become available, if you have selected a cover or a random image and you have a message and the message position is 'top' or 'bottom'."),
         enabled_func = function()
             local screensaver_type = G_reader_settings:readSetting("screensaver_type")
-            local message_pos = G_reader_settings:readSetting("screensaver_message_position")
+            local message_pos = G_reader_settings:readSetting("screensaver_message_vertical_position")
             return G_reader_settings:readSetting("screensaver_show_message") and
                        (screensaver_type == "cover" or screensaver_type == "random_image") and
-                       (message_pos == "top" or message_pos == "bottom")
+                       (message_pos == 100 or message_pos == 0) -- 100=top, 0=bottom
         end,
         checked_func = function()
             return G_reader_settings:nilOrFalse("screensaver_overlap_message")
@@ -456,7 +487,6 @@ local function add_options_in(menu)
     })
     table.insert(items, {
         text = _("Invert message color when no fill"),
-        -- help_text = _("When the This option will only become available, if you have selected 'Message do not overlap image'."),
         checked_func = function()
             return G_reader_settings:isTrue("screensaver_invert_message_color")
         end,
@@ -467,12 +497,12 @@ local function add_options_in(menu)
     })
 end
 
+-- Hook function to inject the options into the menu
 local function add_options_in_screensaver(order, menu, menu_name)
     local buttons = order["KOMenu:menu_buttons"]
     for i, button in ipairs(buttons) do
         if button == "setting" then
             local setting_menu = menu.tab_item_table[i]
-            -- logger.info(i, setting_menu)
             if setting_menu then
                 local sub_menu = find_item_from_path(setting_menu, _("Screen"), _("Sleep screen"))
                 if sub_menu then
@@ -484,6 +514,7 @@ local function add_options_in_screensaver(order, menu, menu_name)
     end
 end
 
+-- Hook for the File Manager Menu
 local FileManagerMenu = require("apps/filemanager/filemanagermenu")
 local FileManagerMenuOrder = require("ui/elements/filemanager_menu_order")
 local orig_FileManagerMenu_setUpdateItemTable = FileManagerMenu.setUpdateItemTable
@@ -493,6 +524,7 @@ FileManagerMenu.setUpdateItemTable = function(self)
     add_options_in_screensaver(FileManagerMenuOrder, self, "file manager")
 end
 
+-- Hook for the Reader Menu
 local ReaderMenu = require("apps/reader/modules/readermenu")
 local ReaderMenuOrder = require("ui/elements/reader_menu_order")
 local orig_ReaderMenu_setUpdateItemTable = ReaderMenu.setUpdateItemTable
