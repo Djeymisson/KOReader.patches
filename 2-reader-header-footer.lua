@@ -180,7 +180,8 @@ local function buildMenu(reader_ui)
         callback = function()
             s.enabled = not s.enabled
             saveSettings(s)
-        end
+        end,
+        separator = true
     }, {
         text = _("Configure items"),
         enabled_func = function()
