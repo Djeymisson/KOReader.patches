@@ -494,6 +494,8 @@ local function buildMenu(reader_ui)
             s.enabled_overlays = {}
         end
 
+        selection_sub_item_table[#selection_sub_item_table].separator = true
+
         -- Dynamically add files from the overlay directory
         for _, basename in ipairs(overlay_basenames) do
             table.insert(selection_sub_item_table, {
@@ -517,27 +519,32 @@ local function buildMenu(reader_ui)
         -- 4. Main Menu Item
         submenu = {{
             text = _("Sleep Overlay"),
+            help_text = _("Enable or disable sleep overlays"),
             checked_func = function()
                 return s.enable_overlay
             end,
             callback = function()
                 s.enable_overlay = not s.enable_overlay
                 saveSettings(s)
-            end
+            end,
+            separator = true
         }, {
             text = _("Active Overlays"),
+            help_text = _("Select which overlays are active"),
             sub_item_table = selection_sub_item_table,
             enabled_func = function()
                 return s.enable_overlay
             end
         }, {
             text = _("Scaling Mode"),
+            help_text = _("Select the scaling mode for overlays"),
             sub_item_table = scaling_sub_item_table,
             enabled_func = function()
                 return s.enable_overlay
             end
         }, {
             text = _("Rotation Mode"),
+            help_text = _("Select the rotation mode for overlays"),
             sub_item_table = rotation_sub_item_table,
             enabled_func = function()
                 return s.enable_overlay
