@@ -27,6 +27,18 @@ local function patchMosaicStatus(plugin)
         return
     end
 
+    -- Attached flag to the table 'MosaicMenuItem', not the function 'paintTo'
+    if MosaicMenuItem._is_patched_paintTo_by_finished_books_look then
+        return -- Already patched, do nothing.
+    end
+    -- ==========================================
+
+    -- We must also guard the IconWidget patching
+    if IconWidget._is_patched_new_by_finished_books_look then
+        return
+    end
+    -- =======================================
+
     -- This flag controls when this patch is creating an icon,
     -- to differentiate it from KOReader's original icon creation.
     local is_drawing_new_icon = false
@@ -68,6 +80,8 @@ local function patchMosaicStatus(plugin)
         -- 4. For any other icon (like the cover itself), proceed normally.
         return originalIconWidgetNew(self, o)
     end
+    -- Mark IconWidget table as patched
+    IconWidget._is_patched_new_by_finished_books_look = true
 
     -- Store original MosaicMenuItem.paintTo
     local originalMosaicMenuItemPaintTo = MosaicMenuItem.paintTo
@@ -122,6 +136,8 @@ local function patchMosaicStatus(plugin)
             end
         end
     end
+    -- Mark MosaicMenuItem table as patched
+    MosaicMenuItem._is_patched_paintTo_by_finished_books_look = true
 end
 
 userpatch.registerPatchPluginFunc("coverbrowser", patchMosaicStatus)
