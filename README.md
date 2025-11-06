@@ -24,6 +24,7 @@ The goal of these modifications is to:
 | [2-reader-header-footer.lua](https://github.com/Djeymisson/KOReader.patches/blob/main/2-reader-header-footer.lua) | Displays a configurable header and footer with book info, status, and reading progress. Includes a settings menu. | Based on the original patch by [Joshua Cant](https://github.com/joshuacant/KOReader.patches) and modifications shared by [Isaac_729](https://www.reddit.com/user/Isaac_729/). |
 | [2-sleep-overlay.lua](https://github.com/Djeymisson/KOReader.patches/blob/main/2-sleep-overlay.lua) | Applies a random overlay image from the `koreader/sleepoverlays` folder to the sleep screen. Includes a settings menu to adjust the image resize mode. | Based on the original patch by [omer-faruq](https://github.com/omer-faruq/koreader-user-patches.git). |
 | [2-screensaver-cover.lua](https://github.com/Djeymisson/KOReader.patches/blob/main/2-screensaver-cover.lua) | Add more options to the "Sleep screen" menu | Based on the original patch by [sebdelsol](https://github.com/sebdelsol/KOReader.patches.git). |
+| [2-finished-books-look.lua](https://github.com/Djeymisson/KOReader.patches/blob/main/2-finished-books-look.lua) | Patch to customize the look of finished books | Based on some patches by [SeriousHornet](https://github.com/SeriousHornet/KOReader.patches.git). |
 
 ---
 
