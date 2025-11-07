@@ -5,17 +5,17 @@ User patch for Cover Browser plugin to add progress percentage badges in top rig
 -- Adjust font size (0 to 1) relative to corner mark
 local text_size = 0.6
 -- Adjust how far left the badge should sit (from the right edge)
-local move_on_x = 100
+local move_on_x = 13
 -- Adjust how far down the badge should sit (from the top edge)
-local move_on_y = 20
+local move_on_y = 8
 -- Adjust badge width
 local badge_w = 55
 -- Adjust badge height
 local badge_h = 30
 -- Fine-tune text position (horizontal offset)
-local text_offset_x = 8
+local text_offset_x = 26
 -- Fine-tune text position (vertical offset)
-local text_offset_y = 11
+local text_offset_y = 11.5
 -- ==========================================================================================
 
 local userpatch = require("userpatch")
