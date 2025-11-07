@@ -8,7 +8,7 @@ This patch combines two effects for books in mosaic view with a "complete" statu
 ]] --
 -- ========================== Edit your preferences here ================================
 -- Set your desired fading amount from 0.0 (no fade) to 1.0 (full white).
-local FADING_AMOUNT = 0.6
+local FADING_AMOUNT = 0.5
 -- ======================================================================================
 
 -- ========================== Do not modify below this line =============================
@@ -113,7 +113,7 @@ local function patchMosaicStatus(plugin)
             -- === Draw Custom Centered Icon ===
             if self.do_hint_opened and self.been_opened then
                 -- Calculate icon size and centered position
-                local icon_size = math.floor(math.min(self.width, self.height) / 4)
+                local icon_size = math.floor(math.min(self.width, self.height) / 2)
                 local ix = math.floor(self.width / 2 - icon_size / 2)
                 local iy = math.floor(self.height / 2 - icon_size / 2)
 
