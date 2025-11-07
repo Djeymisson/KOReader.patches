@@ -1,16 +1,23 @@
 --[[
 User patch for Cover Browser plugin to add progress percentage badges in top right corner
 ]] --
--- ========================== [[Edit your preferences here]] ================================
-local text_size = 0.6 -- Adjust from 0 to 1
-local move_on_x = 100 -- Adjust how far left the badge should sit. 
-local move_on_y = 15 -- Adjust how far up the badge should sit.
-local badge_w = 55 -- Adjust badge width
-local badge_h = 30 -- Adjust badge height
-local text_offset_x = 8 -- Mova o texto para a direita (use valores positivos)
-local text_offset_y = 11 -- Mova o texto para baixo (use valores positivos)
-
+-- ========================== [[ User Preferences ]] ==================================
+-- Adjust font size (0 to 1) relative to corner mark
+local text_size = 0.6
+-- Adjust how far left the badge should sit (from the right edge)
+local move_on_x = 100
+-- Adjust how far down the badge should sit (from the top edge)
+local move_on_y = 20
+-- Adjust badge width
+local badge_w = 55
+-- Adjust badge height
+local badge_h = 30
+-- Fine-tune text position (horizontal offset)
+local text_offset_x = 8
+-- Fine-tune text position (vertical offset)
+local text_offset_y = 11
 -- ==========================================================================================
+
 local userpatch = require("userpatch")
 local logger = require("logger")
 local TextWidget = require("ui/widget/textwidget")
@@ -21,10 +28,25 @@ local Size = require("ui/size")
 local Blitbuffer = require("ffi/blitbuffer")
 local BD = require("ui/bidi")
 local IconWidget = require("ui/widget/iconwidget")
+
+-- Pre-calculate scaled dimensions (improves performance by calculating once)
+local BADGE_W = Screen:scaleBySize(badge_w)
+local BADGE_H = Screen:scaleBySize(badge_h)
+local INSET_X = Screen:scaleBySize(move_on_x)
+local INSET_Y = Screen:scaleBySize(move_on_y)
+local TEXT_PAD = Screen:scaleBySize(6) -- Internal padding for text
+
+-- Instantiate SHARED widgets once (improves performance)
+-- The SVG badge icon can be shared, as it's identical for all items.
 local percent_badge = IconWidget:new{
     icon = "percent.badge",
-    alpha = true
+    alpha = true,
+    width = BADGE_W + 25, -- Set width once
+    height = BADGE_H + 25 -- Set height once
 }
+
+-- The TextWidget CANNOT be shared. It will be created and cached
+-- on the item itself (self) inside the paintTo function.
 
 local function patchCoverBrowserProgressPercent(plugin)
     -- Grab Cover Grid mode and the individual Cover Grid items
@@ -42,61 +64,63 @@ local function patchCoverBrowserProgressPercent(plugin)
         -- Get the cover image widget
         local target = self[1][1][1]
         if not target or not target.dimen then
-            return
+            return -- Not a valid item to patch
         end
 
-        -- Use the same corner_mark_size as the original code for consistency
-        local corner_mark_size = Screen:scaleBySize(20)
+        -- Check if item is a book, has progress, and is not complete
+        if self.do_hint_opened and self.been_opened and self.percent_finished and self.status ~= "complete" and
+            not self.is_directory then
 
-        -- ADD percent badge to top right corner
-        if self.do_hint_opened and self.been_opened and self.percent_finished and self.status ~= "complete" then
+            -- Use the same corner_mark_size as the original code for consistency
+            local corner_mark_size = Screen:scaleBySize(20)
 
-            -- Parse percent text and store as text widget
+            -- 1. Update or Create the TextWidget for this specific item
             local percent_text = string.format("%d%%", math.floor(self.percent_finished * 100))
             local font_size = math.floor(corner_mark_size * text_size)
-            local percent_widget = TextWidget:new{
-                text = percent_text,
-                font_size = font_size,
-                face = Font:getFace("cfont", font_size),
-                alignment = "center",
-                fgcolor = Blitbuffer.COLOR_BLACK,
-                bold = true,
-                max_width = corner_mark_size,
-                truncate_with_ellipsis = true
-            }
 
-            if percent_widget and target and not self.is_directory then
-                local BADGE_W = Screen:scaleBySize(badge_w) -- badge width
-                local BADGE_H = Screen:scaleBySize(badge_h) -- badge height
-                local INSET_X = Screen:scaleBySize(move_on_x) -- push inward from the right edge
-                local INSET_Y = Screen:scaleBySize(move_on_y) -- sit on the inner top edge
-                local TEXT_PAD = Screen:scaleBySize(6) -- breathing room inside the badge
-
-                -- Outer frame
-                local fx = x + math.floor((self.width - target.dimen.w) / 2)
-                local fy = y + math.floor((self.height - target.dimen.h) / 2)
-                local fw = target.dimen.w
-
-                -- Badge size & position
-                percent_badge.width = BADGE_W + 25
-                percent_badge.height = BADGE_H + 25
-
-                bx = fx + fw - BADGE_W - INSET_X
-                by = fy + INSET_Y
-                bx, by = math.floor(bx), math.floor(by)
-
-                -- Paint the SVG badge
-                percent_badge:paintTo(bb, bx, by)
-                percent_widget.alignment = "center"
-                percent_widget.truncate_with_ellipsis = false
-                percent_widget.max_width = BADGE_W - 2 * TEXT_PAD
-
-                local ts = percent_widget:getSize()
-                local tx = bx + math.floor((BADGE_W - ts.w) / 2) + text_offset_x
-                local ty = by + math.floor((BADGE_H - ts.h) / 2) + text_offset_y
-                percent_widget:paintTo(bb, math.floor(tx), math.floor(ty))
+            -- Check if this item already has a cached widget
+            if not self.percent_widget then
+                -- Create it ONCE and cache it on the item itself
+                self.percent_widget = TextWidget:new{
+                    text = percent_text,
+                    font_size = font_size,
+                    face = Font:getFace("cfont", font_size),
+                    alignment = "center",
+                    fgcolor = Blitbuffer.COLOR_BLACK,
+                    bold = true,
+                    truncate_with_ellipsis = false,
+                    max_width = BADGE_W - 2 * TEXT_PAD
+                }
+            else
+                -- Reuse the cached widget, just update its text and font
+                self.percent_widget.text = percent_text
+                self.percent_widget.font_size = font_size
+                self.percent_widget.face = Font:getFace("cfont", font_size)
             end
+
+            -- 2. Calculate positions
+            -- Frame position (calculates the book cover's actual position)
+            local fx = x + math.floor((self.width - target.dimen.w) / 2)
+            local fy = y + math.floor((self.height - target.dimen.h) / 2)
+            local fw = target.dimen.w
+
+            -- Badge position (relative to the frame)
+            local bx = fx + fw - BADGE_W - INSET_X
+            local by = fy + INSET_Y
+            bx, by = math.floor(bx), math.floor(by)
+
+            -- 3. Paint the SHARED SVG badge
+            percent_badge:paintTo(bb, bx, by)
+
+            -- 4. Calculate text position (centered in badge + user offset)
+            local ts = self.percent_widget:getSize() -- Use the item's cached widget
+            local tx = bx + math.floor((BADGE_W - ts.w) / 2) + text_offset_x
+            local ty = by + math.floor((BADGE_H - ts.h) / 2) + text_offset_y
+
+            -- 5. Paint the item's specific text
+            self.percent_widget:paintTo(bb, math.floor(tx), math.floor(ty))
         end
     end
 end
+
 userpatch.registerPatchPluginFunc("coverbrowser", patchCoverBrowserProgressPercent)
