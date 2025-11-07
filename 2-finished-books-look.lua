@@ -114,8 +114,8 @@ local function patchMosaicStatus(plugin)
             if self.do_hint_opened and self.been_opened then
                 -- Calculate icon size and centered position
                 local icon_size = math.floor(math.min(self.width, self.height) / 4)
-                local ix = math.floor(self.width - self.width / 8 - icon_size / 2)
-                local iy = math.floor(self.height - self.height / 1.1 - icon_size / 2)
+                local ix = math.floor(self.width / 2 - icon_size / 2)
+                local iy = math.floor(self.height / 2 - icon_size / 2)
 
                 -- Set flag to TRUE to allow our icon to be created
                 is_drawing_new_icon = true
