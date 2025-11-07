@@ -25,13 +25,15 @@ The goal of these modifications is to:
 | [2-sleep-overlay.lua](https://github.com/Djeymisson/KOReader.patches/blob/main/2-sleep-overlay.lua) | Applies a random overlay image from the `koreader/sleepoverlays` folder to the sleep screen. Includes a settings menu to adjust the image resize mode. | Based on the original patch by [omer-faruq](https://github.com/omer-faruq/koreader-user-patches.git). |
 | [2-screensaver-cover.lua](https://github.com/Djeymisson/KOReader.patches/blob/main/2-screensaver-cover.lua) | Add more options to the "Sleep screen" menu | Based on the original patch by [sebdelsol](https://github.com/sebdelsol/KOReader.patches.git). |
 | [2-finished-books-look.lua](https://github.com/Djeymisson/KOReader.patches/blob/main/2-finished-books-look.lua) | Patch to customize the look of finished books | Based on some patches by [SeriousHornet](https://github.com/SeriousHornet/KOReader.patches.git). |
+| [2-progress-badge.lua](https://github.com/Djeymisson/KOReader.patches/blob/main/2-progress-badge.lua) | Patch to add a ribon with the reading progress on the mosaic menu | Based on some patches by [SeriousHornet](https://github.com/SeriousHornet/KOReader.patches.git). |
 
 ---
 
 ## Applying Patches
 
 1. Copy the `.lua` files you want to use into your KOReader `patches/` directory.
-2. Restart KOReader to apply the patches.
+2. If the patch uses icons, you will also need to place the necessary .svg in your KOReader `icons/` directory.
+3. Restart KOReader to apply the patches.
 
 ---
 
