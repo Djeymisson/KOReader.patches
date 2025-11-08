@@ -8,7 +8,7 @@ This patch combines two effects for books in mosaic view with a "complete" statu
 ]] --
 -- ========================== Edit your preferences here ================================
 -- Set your desired fading amount from 0.0 (no fade) to 1.0 (full white).
-local FADING_AMOUNT = 0.2
+local FADING_AMOUNT = 0.4
 -- ======================================================================================
 
 -- ========================== Do not modify below this line =============================
