@@ -1,8 +1,7 @@
 ------------------------------------------------------------
--- Reader Header & Footer Patch (KOReader 2025.08+)
--- Author: Djeymisson Moraes (refined)
+-- Reader Header & Footer Patch (KOReader 2025.10+)
 -- This patch is based on “2-reader-header-print-edition.lua” by Joshua Cant (https://github.com/joshuacant/KOReader.patches),
--- and incorporates modifications originally made by Isaac_729, adapted and enhanced for KOReader version 2025.08
+-- and incorporates modifications originally made by Isaac_729, adapted and enhanced for KOReader version 2025.10
 -- with additional features (header/footer, margin handling, settings menu).
 ------------------------------------------------------------
 ------------------------------------------------------------
