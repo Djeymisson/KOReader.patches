@@ -46,6 +46,7 @@ local Settings = {
 
 local Mode = {
     off = "off",
+    no_transition_widgets = "no_transition_widgets",
     cover_with_widgets = "cover_with_widgets",
     cover_only = "cover_only",
 }
@@ -61,12 +62,14 @@ local DEFAULT_SOURCE_MODE = SourceMode.balanced
 
 local MODE_ORDER = {
     Mode.off,
+    Mode.no_transition_widgets,
     Mode.cover_with_widgets,
     Mode.cover_only,
 }
 
 local VALID_MODES = {
     [Mode.off] = true,
+    [Mode.no_transition_widgets] = true,
     [Mode.cover_with_widgets] = true,
     [Mode.cover_only] = true,
 }
@@ -83,7 +86,8 @@ local VALID_SOURCE_MODES = {
 
 local function modeLabel(mode)
     local labels = {
-        [Mode.off] = _("Disabled"),
+        [Mode.off] = _("Default widgets only"),
+        [Mode.no_transition_widgets] = _("No cover or default widgets"),
         [Mode.cover_with_widgets] = _("Cover + default widgets"),
         [Mode.cover_only] = _("Cover only"),
     }
@@ -126,27 +130,38 @@ local function getCloseMode()
     return readMode(Settings.close_mode, DEFAULT_CLOSE_MODE)
 end
 
+local function modeShowsCover(mode)
+    return mode == Mode.cover_with_widgets or mode == Mode.cover_only
+end
+
+local function modeSuppressesDefaultWidgets(mode)
+    return mode == Mode.cover_only or mode == Mode.no_transition_widgets
+end
+
 local function shouldShowOpeningCover()
-    return isEnabled() and getOpenMode() ~= Mode.off
+    return isEnabled() and modeShowsCover(getOpenMode())
 end
 
 local function shouldShowClosingCoverMode()
-    return isEnabled() and getCloseMode() ~= Mode.off
+    return isEnabled() and modeShowsCover(getCloseMode())
 end
 
 local function shouldUseSeamlessOpening()
-    return getOpenMode() == Mode.cover_only
+    return isEnabled() and modeSuppressesDefaultWidgets(getOpenMode())
 end
 
 local function shouldSuppressClosingNotice()
-    return getCloseMode() == Mode.cover_only
+    local close_mode = getCloseMode()
+    if close_mode == Mode.no_transition_widgets then
+        return true
+    end
+
+    return close_mode == Mode.cover_only
         and G_reader_settings:nilOrTrue(Settings.suppress_closing_notice)
 end
 
 local function shouldPreSuppressClosingNotice()
-    return isEnabled()
-        and shouldShowClosingCoverMode()
-        and shouldSuppressClosingNotice()
+    return isEnabled() and shouldSuppressClosingNotice()
 end
 
 local function shouldPreferBestQualityCover()
@@ -652,7 +667,7 @@ local function makeModeMenu(setting_key, default_mode, get_current_mode)
             end,
             callback = function(touchmenu_instance)
                 setMode(setting_key, mode)
-                if mode == Mode.off then
+                if mode == Mode.off or mode == Mode.no_transition_widgets then
                     stopSuppressingClosingNotice()
                     closeCover()
                 end
@@ -829,7 +844,7 @@ local function patchShowReaderCoroutine()
         end
 
         local final_seamless = seamless
-        if cover_shown and shouldUseSeamlessOpening() then
+        if shouldUseSeamlessOpening() then
             final_seamless = true
         end
 
@@ -866,10 +881,14 @@ local function patchReaderOnClose()
 
     ReaderUI.onClose = function(self, full_refresh)
         local cover_shown = false
+        local suppress_started = false
+
+        if isEnabled() and shouldSuppressClosingNotice() then
+            startSuppressingClosingNotice()
+            suppress_started = State.suppress_closing_notice
+        end
 
         if shouldShowClosingCover(self, full_refresh) then
-            startSuppressingClosingNotice()
-
             local ok, result = pcall(showCover, self.document.file, {
                 reason = "close",
                 open_document = self.document,
@@ -878,12 +897,14 @@ local function patchReaderOnClose()
 
             if ok then
                 cover_shown = result
-                if not cover_shown then
+                if not cover_shown and not suppress_started then
                     stopSuppressingClosingNotice()
                 end
             else
                 warn("showCover on close failed", result)
-                stopSuppressingClosingNotice()
+                if not suppress_started then
+                    stopSuppressingClosingNotice()
+                end
             end
         end
 
@@ -893,6 +914,9 @@ local function patchReaderOnClose()
 
         if cover_shown then
             scheduleCloseCover(getAfterCloseDelay())
+        end
+
+        if suppress_started or State.suppress_closing_notice then
             scheduleStopSuppressingClosingNotice(getClosingNoticeSuppressDelay())
         end
 
