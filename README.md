@@ -76,7 +76,7 @@ If these icons are not available in your KOReader installation, the related visu
 
 ## Patch details
 
-### `2-bookloadcover-plus.lua`
+### [2-bookloadcover-plus.lua](https://github.com/Djeymisson/KOReader.patches/blob/main/2-bookloadcover-plus.lua)
 
 Shows the current book cover during opening and closing transitions. Use the menu to choose whether each transition is disabled, shows the cover together with KOReader's default widgets, or shows only the cover.
 
@@ -85,7 +85,7 @@ It also includes a **Cover source** option:
 - **Balanced (faster):** tries cached or already available cover sources first, which is usually faster.
 - **Best quality:** prioritizes extracting the cover directly from the document when possible, which may look better but can be slower when opening a book.
 
-### `2-browser-folder-cover.lua`
+### [2-browser-folder-cover.lua](https://github.com/Djeymisson/KOReader.patches/blob/main/2-browser-folder-cover.lua)
 
 Corrected version of the original folder cover patch for Cover Browser mosaic mode. It keeps the same goal: folders can be displayed with a cover-style look, using either a custom `.cover` image or a book cover from inside the folder.
 
@@ -101,19 +101,19 @@ Supported custom folder cover names:
 
 This version is not a separate feature patch. It is an adjusted version of the original patch with compatibility and safety fixes for some KOReader/Cover Browser combinations, including safer handling of missing menu/item data and a fallback when the Cover Browser book info manager is not available as an expected internal reference. The patch also adds menu options for cropping the folder image, centering the folder name, and showing or hiding the folder name.
 
-### `2-finished-books-look.lua`
+### [2-finished-books-look.lua](https://github.com/Djeymisson/KOReader.patches/blob/main/2-finished-books-look.lua)
 
 Changes how completed books are displayed in mosaic mode. Instead of relying on the default corner status icons, completed books are visually faded and marked with a larger centered completion icon.
 
 The fade intensity can be adjusted inside the patch file.
 
-### `2-progress-badge.lua`
+### [2-progress-badge.lua](https://github.com/Djeymisson/KOReader.patches/blob/main/2-progress-badge.lua)
 
 Adds a compact visual progress indicator to covers in mosaic mode. Books currently being read show a percentage badge, while completed books use a dedicated completion badge.
 
 The patch includes editable layout preferences near the top of the file, such as badge size, position, and text placement.
 
-### `2-screensaver-cover.lua`
+### [2-screensaver-cover.lua](https://github.com/Djeymisson/KOReader.patches/blob/main/2-screensaver-cover.lua)
 
 Adds extra controls to KOReader's sleep screen menu. The patch is focused on improving how covers, images, and messages are displayed when the device enters sleep mode.
 
@@ -125,7 +125,7 @@ Added options include:
 - center the image;
 - invert message color when using no fill.
 
-### `2-sleep-overlay.lua`
+### [2-sleep-overlay.lua](https://github.com/Djeymisson/KOReader.patches/blob/main/2-sleep-overlay.lua)
 
 Composes a transparent PNG overlay over the current sleep cover. Place overlay images in:
 
