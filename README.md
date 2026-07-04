@@ -55,7 +55,7 @@ You do not need to install every patch. Each file can be copied independently, a
 
 | Patch | Summary | Main area | Base / Credit |
 |---|---|---|---|
-| [2-bookloadcover-plus.lua](https://github.com/Djeymisson/KOReader.patches/blob/main/2-bookloadcover-plus.lua) | Replaces the opening and closing transitions with the current book cover. It can be disabled globally or configured separately for opening and closing. | Reader loading and closing | Based on the original patch by [Oleh Tiuriakov](https://github.com/reuerendo/koreader-patches). |
+| [2-bookloadcover-plus.lua](https://github.com/Djeymisson/KOReader.patches/blob/main/2-bookloadcover-plus.lua) | Replaces the opening and closing transitions with the current book cover. It can be disabled globally, configured separately for opening and closing, and set to prioritize either speed or cover quality. | Reader loading and closing | Based on the original patch by [Oleh Tiuriakov](https://github.com/reuerendo/koreader-patches). |
 | [2-browser-folder-cover.lua](https://github.com/Djeymisson/KOReader.patches/blob/main/2-browser-folder-cover.lua) | Corrected version of the folder cover patch for Cover Browser mosaic view. It keeps folder covers based on `.cover` images or book covers while applying compatibility/safety fixes. | File browser / Cover Browser | Original patch by [sebdelsol](https://github.com/sebdelsol/KOReader.patches); this repository includes a corrected version. |
 | [2-finished-books-look.lua](https://github.com/Djeymisson/KOReader.patches/blob/main/2-finished-books-look.lua) | Changes the appearance of completed books in mosaic view by fading the cover and showing a centered completion mark. | Cover Browser | Based on some patches by [SeriousHornet](https://github.com/SeriousHornet/KOReader.patches.git). |
 | [2-progress-badge.lua](https://github.com/Djeymisson/KOReader.patches/blob/main/2-progress-badge.lua) | Adds a progress badge to book covers in mosaic view. In-progress books show a percentage; completed books show a done badge. | Cover Browser | Based on some patches by [SeriousHornet](https://github.com/SeriousHornet/KOReader.patches.git). |
@@ -79,6 +79,11 @@ If these icons are not available in your KOReader installation, the related visu
 ### `2-bookloadcover-plus.lua`
 
 Shows the current book cover during opening and closing transitions. Use the menu to choose whether each transition is disabled, shows the cover together with KOReader's default widgets, or shows only the cover.
+
+It also includes a **Cover source** option:
+
+- **Balanced (faster):** tries cached or already available cover sources first, which is usually faster.
+- **Best quality:** prioritizes extracting the cover directly from the document when possible, which may look better but can be slower when opening a book.
 
 ### `2-browser-folder-cover.lua`
 

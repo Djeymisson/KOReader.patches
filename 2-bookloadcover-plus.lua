@@ -36,6 +36,7 @@ local Settings = {
     close_mode = "bookloadcover_close_mode",
     close_enabled_legacy = "bookloadcover_close_enabled",
     extract_enabled = "bookloadcover_extract_enabled",
+    cover_source = "bookloadcover_cover_source",
     close_on_teardown = "bookloadcover_close_on_teardown",
     suppress_closing_notice = "bookloadcover_suppress_closing_notice",
     open_close_delay = "bookloadcover_close_delay",
@@ -49,8 +50,14 @@ local Mode = {
     cover_only = "cover_only",
 }
 
+local SourceMode = {
+    balanced = "balanced",
+    best_quality = "best_quality",
+}
+
 local DEFAULT_OPEN_MODE = Mode.cover_only
 local DEFAULT_CLOSE_MODE = Mode.cover_only
+local DEFAULT_SOURCE_MODE = SourceMode.balanced
 
 local MODE_ORDER = {
     Mode.off,
@@ -64,6 +71,16 @@ local VALID_MODES = {
     [Mode.cover_only] = true,
 }
 
+local SOURCE_MODE_ORDER = {
+    SourceMode.balanced,
+    SourceMode.best_quality,
+}
+
+local VALID_SOURCE_MODES = {
+    [SourceMode.balanced] = true,
+    [SourceMode.best_quality] = true,
+}
+
 local function modeLabel(mode)
     local labels = {
         [Mode.off] = _("Disabled"),
@@ -73,9 +90,22 @@ local function modeLabel(mode)
     return labels[mode] or labels[Mode.cover_only]
 end
 
+local function sourceModeLabel(mode)
+    local labels = {
+        [SourceMode.balanced] = _("Balanced (faster)"),
+        [SourceMode.best_quality] = _("Best quality"),
+    }
+    return labels[mode] or labels[SourceMode.balanced]
+end
+
 local function readMode(key, default_mode)
     local mode = G_reader_settings:readSetting(key, default_mode)
     return VALID_MODES[mode] and mode or default_mode
+end
+
+local function getCoverSourceMode()
+    local mode = G_reader_settings:readSetting(Settings.cover_source, DEFAULT_SOURCE_MODE)
+    return VALID_SOURCE_MODES[mode] and mode or DEFAULT_SOURCE_MODE
 end
 
 local function isEnabled()
@@ -117,6 +147,10 @@ local function shouldPreSuppressClosingNotice()
     return isEnabled()
         and shouldShowClosingCoverMode()
         and shouldSuppressClosingNotice()
+end
+
+local function shouldPreferBestQualityCover()
+    return getCoverSourceMode() == SourceMode.best_quality
 end
 
 local function shouldExtractFromDocument()
@@ -286,6 +320,12 @@ local function setMode(key, mode)
     end
 end
 
+local function setCoverSourceMode(mode)
+    if VALID_SOURCE_MODES[mode] then
+        saveSetting(Settings.cover_source, mode)
+    end
+end
+
 local function getWidgetText(widget)
     if type(widget) ~= "table" then
         return nil
@@ -452,8 +492,12 @@ local function getCoverFromOpenDocument(document)
     return nil
 end
 
-local function extractCoverFromDocument(filepath)
-    if not shouldExtractFromDocument() or not DocumentRegistry:hasProvider(filepath) then
+local function extractCoverFromDocument(filepath, force_extract)
+    if not force_extract and not shouldExtractFromDocument() then
+        return nil
+    end
+
+    if not DocumentRegistry:hasProvider(filepath) then
         return nil
     end
 
@@ -493,19 +537,36 @@ end
 local function findCover(filepath, options)
     options = options or {}
 
-    local sources = {
-        getCoverFromCoverImageCache,
-        getCoverFromDB,
-    }
+    local sources = {}
 
-    if options.open_document then
-        table.insert(sources, function()
-            return getCoverFromOpenDocument(options.open_document)
-        end)
-    end
+    if shouldPreferBestQualityCover() then
+        if options.open_document then
+            table.insert(sources, function()
+                return getCoverFromOpenDocument(options.open_document)
+            end)
+        end
 
-    if options.allow_direct_extract ~= false then
-        table.insert(sources, extractCoverFromDocument)
+        if options.allow_direct_extract ~= false then
+            table.insert(sources, function()
+                return extractCoverFromDocument(filepath, true)
+            end)
+        end
+
+        table.insert(sources, getCoverFromDB)
+        table.insert(sources, getCoverFromCoverImageCache)
+    else
+        table.insert(sources, getCoverFromCoverImageCache)
+        table.insert(sources, getCoverFromDB)
+
+        if options.open_document then
+            table.insert(sources, function()
+                return getCoverFromOpenDocument(options.open_document)
+            end)
+        end
+
+        if options.allow_direct_extract ~= false then
+            table.insert(sources, extractCoverFromDocument)
+        end
     end
 
     for _, source in ipairs(sources) do
@@ -605,6 +666,29 @@ local function makeModeMenu(setting_key, default_mode, get_current_mode)
     return items
 end
 
+local function makeSourceModeMenu()
+    local items = {}
+
+    for _, mode in ipairs(SOURCE_MODE_ORDER) do
+        table.insert(items, {
+            text = sourceModeLabel(mode),
+            radio = true,
+            keep_menu_open = true,
+            checked_func = function()
+                return getCoverSourceMode() == mode
+            end,
+            callback = function(touchmenu_instance)
+                setCoverSourceMode(mode)
+                if touchmenu_instance then
+                    touchmenu_instance:updateItems()
+                end
+            end,
+        })
+    end
+
+    return items
+end
+
 local BookLoadCoverMenu = {
     name = "bookloadcover",
 }
@@ -618,7 +702,7 @@ function BookLoadCoverMenu:addToMainMenu(menu_items)
             end
             return title .. " (" .. _("disabled") .. ")"
         end,
-        sorting_hint = "more_tools",
+        sorting_hint = "setting",
         keep_menu_open = true,
         sub_item_table = {
             {
@@ -646,6 +730,13 @@ function BookLoadCoverMenu:addToMainMenu(menu_items)
                 end,
                 keep_menu_open = true,
                 sub_item_table = makeModeMenu(Settings.close_mode, DEFAULT_CLOSE_MODE, getCloseMode),
+            },
+            {
+                text_func = function()
+                    return _("Cover source") .. ": " .. sourceModeLabel(getCoverSourceMode())
+                end,
+                keep_menu_open = true,
+                sub_item_table = makeSourceModeMenu(),
             },
             {
                 text = _("Extract cover directly from document when needed"),
