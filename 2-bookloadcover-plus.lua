@@ -13,8 +13,13 @@ local lfs = require("libs/libkoreader-lfs")
 local DocumentRegistry = require("document/documentregistry")
 local _ = require("gettext")
 
-local LOG_PREFIX = "BookLoadCover patch:"
-local PATCH_VERSION = "v1.1.0"
+local PLUGIN_NAME = "BookLoadCover Plus"
+local LOG_PREFIX = PLUGIN_NAME .. " patch:"
+local PATCH_VERSION = "v1.2.0"
+
+local function pluginName()
+	return _("BookLoadCover Plus")
+end
 
 local function info(...)
 	logger.info(LOG_PREFIX, ...)
@@ -42,6 +47,8 @@ local Settings = {
 	extract_enabled = "bookloadcover_extract_enabled",
 	cover_source = "bookloadcover_cover_source",
 	cover_layout = "bookloadcover_cover_layout",
+	card_size_percent = "bookloadcover_card_size_percent",
+	card_rounded_corners = "bookloadcover_card_rounded_corners",
 	close_on_teardown = "bookloadcover_close_on_teardown",
 	suppress_closing_notice = "bookloadcover_suppress_closing_notice",
 	open_close_delay = "bookloadcover_close_delay",
@@ -66,12 +73,14 @@ local LayoutMode = {
 	fit_black = "fit_black",
 	fit_white = "fit_white",
 	fill_zoom = "fill_zoom",
+	centered_card = "centered_card",
 }
 
 local DEFAULT_OPEN_MODE = Mode.cover_only
 local DEFAULT_CLOSE_MODE = Mode.cover_only
 local DEFAULT_SOURCE_MODE = SourceMode.balanced
 local DEFAULT_LAYOUT_MODE = LayoutMode.stretch
+local DEFAULT_CARD_SIZE_PERCENT = 70
 
 local MODE_ORDER = {
 	Mode.off,
@@ -102,6 +111,7 @@ local LAYOUT_MODE_ORDER = {
 	LayoutMode.fit_black,
 	LayoutMode.fit_white,
 	LayoutMode.fill_zoom,
+	LayoutMode.centered_card,
 }
 
 local VALID_LAYOUT_MODES = {
@@ -109,6 +119,7 @@ local VALID_LAYOUT_MODES = {
 	[LayoutMode.fit_black] = true,
 	[LayoutMode.fit_white] = true,
 	[LayoutMode.fill_zoom] = true,
+	[LayoutMode.centered_card] = true,
 }
 
 local function modeLabel(mode)
@@ -135,6 +146,7 @@ local function layoutModeLabel(mode)
 		[LayoutMode.fit_black] = _("Fit to screen (black background)"),
 		[LayoutMode.fit_white] = _("Fit to screen (white background)"),
 		[LayoutMode.fill_zoom] = _("Fill screen (zoom/crop)"),
+		[LayoutMode.centered_card] = _("Centered card"),
 	}
 	return labels[mode] or labels[LayoutMode.stretch]
 end
@@ -152,6 +164,18 @@ end
 local function getCoverLayoutMode()
 	local mode = G_reader_settings:readSetting(Settings.cover_layout, DEFAULT_LAYOUT_MODE)
 	return VALID_LAYOUT_MODES[mode] and mode or DEFAULT_LAYOUT_MODE
+end
+
+local function getCardSizePercent()
+	local percent = tonumber(G_reader_settings:readSetting(Settings.card_size_percent, DEFAULT_CARD_SIZE_PERCENT))
+	if not percent then
+		return DEFAULT_CARD_SIZE_PERCENT
+	end
+	return math.max(30, math.min(95, math.floor(percent)))
+end
+
+local function useRoundedCardCorners()
+	return G_reader_settings:nilOrTrue(Settings.card_rounded_corners)
 end
 
 local function getOpenMode()
@@ -372,6 +396,13 @@ end
 local function setCoverLayoutMode(mode)
 	if VALID_LAYOUT_MODES[mode] then
 		saveSetting(Settings.cover_layout, mode)
+	end
+end
+
+local function setCardSizePercent(percent)
+	percent = tonumber(percent)
+	if percent then
+		saveSetting(Settings.card_size_percent, math.max(30, math.min(95, math.floor(percent))))
 	end
 end
 
@@ -682,30 +713,68 @@ local function getCoverSize(cover_bb)
 	return nil, nil
 end
 
+local function makeStretchCoverWidget(cover_bb, screen_w, screen_h)
+	return ImageWidget:new({
+		image = cover_bb,
+		width = screen_w,
+		height = screen_h,
+		alpha = true,
+		image_disposable = false,
+	})
+end
+
+local function makeCenteredCardCoverWidget(cover_bb, cover_w, cover_h, screen_w, screen_h)
+	local percent = getCardSizePercent() / 100
+	local card_w = math.max(1, math.floor(screen_w * percent))
+	local card_h = math.max(1, math.floor(screen_h * percent))
+	local border_size = Screen:scaleBySize(2)
+	local padding = Screen:scaleBySize(10)
+	local inner_w = math.max(1, card_w - (padding + border_size) * 2)
+	local inner_h = math.max(1, card_h - (padding + border_size) * 2)
+	local scale_factor = math.min(inner_w / cover_w, inner_h / cover_h)
+
+	local image = ImageWidget:new({
+		image = cover_bb,
+		scale_factor = scale_factor,
+		alpha = true,
+		image_disposable = false,
+	})
+
+	local card = FrameContainer:new({
+		dimen = { w = card_w, h = card_h },
+		padding = padding,
+		bordersize = border_size,
+		radius = useRoundedCardCorners() and Screen:scaleBySize(18) or 0,
+		background = Blitbuffer.COLOR_WHITE,
+		color = Blitbuffer.COLOR_BLACK,
+		CenterContainer:new({
+			dimen = { w = inner_w, h = inner_h },
+			image,
+		}),
+	})
+
+	return CenterContainer:new({
+		dimen = { w = screen_w, h = screen_h },
+		card,
+	})
+end
+
 local function makeCoverImageWidget(cover_bb)
 	local screen_w, screen_h = Screen:getWidth(), Screen:getHeight()
 	local layout_mode = getCoverLayoutMode()
 
 	if layout_mode == LayoutMode.stretch then
-		return ImageWidget:new({
-			image = cover_bb,
-			width = screen_w,
-			height = screen_h,
-			alpha = true,
-			image_disposable = false,
-		})
+		return makeStretchCoverWidget(cover_bb, screen_w, screen_h)
 	end
 
 	local cover_w, cover_h = getCoverSize(cover_bb)
 	if not cover_w or not cover_h then
 		warn("failed to read cover size, falling back to stretch layout")
-		return ImageWidget:new({
-			image = cover_bb,
-			width = screen_w,
-			height = screen_h,
-			alpha = true,
-			image_disposable = false,
-		})
+		return makeStretchCoverWidget(cover_bb, screen_w, screen_h)
+	end
+
+	if layout_mode == LayoutMode.centered_card then
+		return makeCenteredCardCoverWidget(cover_bb, cover_w, cover_h, screen_w, screen_h)
 	end
 
 	local scale_factor
@@ -866,9 +935,33 @@ local function makeLayoutModeMenu()
 	return items
 end
 
+local function makeCardSizeMenu()
+	local items = {}
+	local options = { 40, 50, 60, 70, 80, 90 }
+
+	for _, percent in ipairs(options) do
+		table.insert(items, {
+			text = percent .. "%",
+			radio = true,
+			keep_menu_open = true,
+			checked_func = function()
+				return getCardSizePercent() == percent
+			end,
+			callback = function(touchmenu_instance)
+				setCardSizePercent(percent)
+				if touchmenu_instance then
+					touchmenu_instance:updateItems()
+				end
+			end,
+		})
+	end
+
+	return items
+end
+
 local function showVersionInfo()
 	UIManager:show(InfoMessage:new({
-		text = _("BookLoadCover") .. "\n" .. _("Version") .. ": " .. PATCH_VERSION,
+		text = pluginName() .. "\n" .. _("Version") .. ": " .. PATCH_VERSION,
 		timeout = 3,
 	}))
 end
@@ -879,68 +972,111 @@ local BookLoadCoverMenu = {
 
 function BookLoadCoverMenu:addToMainMenu(menu_items)
 	menu_items.bookloadcover = {
-		text = _("BookLoadCover"),
+		text = pluginName(),
 		sorting_hint = "setting",
 		keep_menu_open = true,
 		sub_item_table = {
+			{
+				text = _("Transition behavior"),
+				keep_menu_open = true,
+				sub_item_table = {
+					{
+						text_func = function()
+							return _("Opening") .. ": " .. modeLabel(getOpenMode())
+						end,
+						keep_menu_open = true,
+						sub_item_table = makeModeMenu(Settings.open_mode, DEFAULT_OPEN_MODE, getOpenMode),
+					},
+					{
+						text_func = function()
+							return _("Closing") .. ": " .. modeLabel(getCloseMode())
+						end,
+						keep_menu_open = true,
+						sub_item_table = makeModeMenu(Settings.close_mode, DEFAULT_CLOSE_MODE, getCloseMode),
+					},
+				},
+			},
+			{
+				text = _("Cover display"),
+				keep_menu_open = true,
+				sub_item_table = {
+					{
+						text_func = function()
+							return _("Cover source") .. ": " .. sourceModeLabel(getCoverSourceMode())
+						end,
+						keep_menu_open = true,
+						sub_item_table = makeSourceModeMenu(),
+					},
+					{
+						text_func = function()
+							return _("Cover layout") .. ": " .. layoutModeLabel(getCoverLayoutMode())
+						end,
+						keep_menu_open = true,
+						sub_item_table = makeLayoutModeMenu(),
+					},
+					{
+						text = _("Centered card"),
+						enabled_func = function()
+							return getCoverLayoutMode() == LayoutMode.centered_card
+						end,
+						keep_menu_open = true,
+						sub_item_table = {
+							{
+								text_func = function()
+									return _("Size") .. ": " .. getCardSizePercent() .. "%"
+								end,
+								keep_menu_open = true,
+								sub_item_table = makeCardSizeMenu(),
+							},
+							{
+								text = _("Rounded corners"),
+								checked_func = useRoundedCardCorners,
+								keep_menu_open = true,
+								callback = function(touchmenu_instance)
+									saveSetting(Settings.card_rounded_corners, not useRoundedCardCorners())
+									if touchmenu_instance then
+										touchmenu_instance:updateItems()
+									end
+								end,
+							},
+						},
+					},
+				},
+			},
+			{
+				text = _("Advanced"),
+				keep_menu_open = true,
+				sub_item_table = {
+					{
+						text = _("Extract cover directly from document when needed"),
+						checked_func = shouldExtractFromDocument,
+						keep_menu_open = true,
+						callback = function(touchmenu_instance)
+							saveSetting(Settings.extract_enabled, not shouldExtractFromDocument())
+							if touchmenu_instance then
+								touchmenu_instance:updateItems()
+							end
+						end,
+					},
+					{
+						text = _("Show cover on internal reload/document switch"),
+						checked_func = shouldShowOnTeardown,
+						keep_menu_open = true,
+						callback = function(touchmenu_instance)
+							saveSetting(Settings.close_on_teardown, not shouldShowOnTeardown())
+							if touchmenu_instance then
+								touchmenu_instance:updateItems()
+							end
+						end,
+					},
+				},
+			},
 			{
 				text_func = function()
 					return _("Patch version") .. ": " .. PATCH_VERSION
 				end,
 				keep_menu_open = false,
 				callback = showVersionInfo,
-				separator = true,
-			},
-			{
-				text_func = function()
-					return _("Opening") .. ": " .. modeLabel(getOpenMode())
-				end,
-				keep_menu_open = true,
-				sub_item_table = makeModeMenu(Settings.open_mode, DEFAULT_OPEN_MODE, getOpenMode),
-			},
-			{
-				text_func = function()
-					return _("Closing") .. ": " .. modeLabel(getCloseMode())
-				end,
-				keep_menu_open = true,
-				sub_item_table = makeModeMenu(Settings.close_mode, DEFAULT_CLOSE_MODE, getCloseMode),
-			},
-			{
-				text_func = function()
-					return _("Cover source") .. ": " .. sourceModeLabel(getCoverSourceMode())
-				end,
-				keep_menu_open = true,
-				sub_item_table = makeSourceModeMenu(),
-			},
-			{
-				text_func = function()
-					return _("Cover layout") .. ": " .. layoutModeLabel(getCoverLayoutMode())
-				end,
-				keep_menu_open = true,
-				sub_item_table = makeLayoutModeMenu(),
-			},
-			{
-				text = _("Extract cover directly from document when needed"),
-				checked_func = shouldExtractFromDocument,
-				keep_menu_open = true,
-				callback = function(touchmenu_instance)
-					saveSetting(Settings.extract_enabled, not shouldExtractFromDocument())
-					if touchmenu_instance then
-						touchmenu_instance:updateItems()
-					end
-				end,
-				separator = true,
-			},
-			{
-				text = _("Show cover on internal reload/document switch"),
-				checked_func = shouldShowOnTeardown,
-				keep_menu_open = true,
-				callback = function(touchmenu_instance)
-					saveSetting(Settings.close_on_teardown, not shouldShowOnTeardown())
-					if touchmenu_instance then
-						touchmenu_instance:updateItems()
-					end
-				end,
 			},
 		},
 	}
