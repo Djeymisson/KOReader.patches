@@ -15,7 +15,7 @@ local _ = require("gettext")
 
 local PLUGIN_NAME = "BookLoadCover Plus"
 local LOG_PREFIX = PLUGIN_NAME .. " patch:"
-local PATCH_VERSION = "v1.2.0"
+local PATCH_VERSION = "v1.2.1"
 
 local function pluginName()
 	return _("BookLoadCover Plus")
@@ -38,6 +38,7 @@ local State = {
 	file_manager_book_info = nil,
 	coverbrowser_path_added = false,
 	suppress_closing_notice = false,
+	current_book_path = nil,
 }
 
 local Settings = {
@@ -202,8 +203,46 @@ local function modeSuppressesDefaultWidgets(mode)
 	return mode == Mode.cover_only or mode == Mode.no_transition_widgets
 end
 
+local function shouldShowOnInternalTransition()
+	return G_reader_settings:isTrue(Settings.close_on_teardown)
+end
+
 local function shouldShowOpeningCover()
 	return modeShowsCover(getOpenMode())
+end
+
+local function getReaderFile(ui)
+	return ui and ui.document and ui.document.file or nil
+end
+
+local function sameFile(left, right)
+	return left and right and left == right
+end
+
+local function rememberCurrentBook(file)
+	if file and file ~= "" then
+		State.current_book_path = file
+	end
+end
+
+local function resetCurrentBook()
+	State.current_book_path = nil
+end
+
+local function looksLikeInternalOpening(ui, file, seamless)
+	return seamless == true or sameFile(getReaderFile(ui), file) or sameFile(State.current_book_path, file)
+end
+
+local function shouldShowOpeningCoverForRequest(ui, file, seamless)
+	if not shouldShowOpeningCover() then
+		return false
+	end
+
+	if shouldShowOnInternalTransition() then
+		return true
+	end
+
+	return not looksLikeInternalOpening(ui, file, seamless)
 end
 
 local function shouldShowClosingCoverMode()
@@ -233,10 +272,6 @@ end
 
 local function shouldExtractFromDocument()
 	return G_reader_settings:nilOrTrue(Settings.extract_enabled)
-end
-
-local function shouldShowOnTeardown()
-	return G_reader_settings:isTrue(Settings.close_on_teardown)
 end
 
 local function getOpenCloseDelay()
@@ -854,7 +889,7 @@ local function shouldShowClosingCover(ui, full_refresh)
 		return false
 	end
 
-	if full_refresh == false and ui.tearing_down and not shouldShowOnTeardown() then
+	if full_refresh == false and ui.tearing_down and not shouldShowOnInternalTransition() then
 		return false
 	end
 
@@ -1060,10 +1095,10 @@ function BookLoadCoverMenu:addToMainMenu(menu_items)
 					},
 					{
 						text = _("Show cover on internal reload/document switch"),
-						checked_func = shouldShowOnTeardown,
+						checked_func = shouldShowOnInternalTransition,
 						keep_menu_open = true,
 						callback = function(touchmenu_instance)
-							saveSetting(Settings.close_on_teardown, not shouldShowOnTeardown())
+							saveSetting(Settings.close_on_teardown, not shouldShowOnInternalTransition())
 							if touchmenu_instance then
 								touchmenu_instance:updateItems()
 							end
@@ -1106,6 +1141,19 @@ local function patchFileManagerMenu()
 	end
 end
 
+local function patchFileManagerInit()
+	local FileManager = safeRequire("apps/filemanager/filemanager")
+	if not FileManager or FileManager._original_init_bookloadcover_plus then
+		return
+	end
+
+	FileManager._original_init_bookloadcover_plus = FileManager.init
+	FileManager.init = function(self, ...)
+		resetCurrentBook()
+		return FileManager._original_init_bookloadcover_plus(self, ...)
+	end
+end
+
 local function patchUIManagerShow()
 	if UIManager._original_show_bookloadcover then
 		return
@@ -1134,16 +1182,12 @@ local function patchShowReaderCoroutine()
 	ReaderUI._original_showReaderCoroutine_bookloadcover = ReaderUI.showReaderCoroutine
 
 	ReaderUI.showReaderCoroutine = function(self, file, provider, seamless)
-		local cover_shown = false
-
-		if shouldShowOpeningCover() then
+		if shouldShowOpeningCoverForRequest(self, file, seamless) then
 			local ok, result = pcall(showCover, file, {
 				reason = "open",
 				allow_direct_extract = true,
 			})
-			if ok then
-				cover_shown = result
-			else
+			if not ok then
 				warn("showCover failed", result)
 			end
 		end
@@ -1153,7 +1197,9 @@ local function patchShowReaderCoroutine()
 			final_seamless = true
 		end
 
-		return ReaderUI._original_showReaderCoroutine_bookloadcover(self, file, provider, final_seamless)
+		local ret = ReaderUI._original_showReaderCoroutine_bookloadcover(self, file, provider, final_seamless)
+		rememberCurrentBook(file)
+		return ret
 	end
 end
 
@@ -1167,6 +1213,7 @@ local function patchReaderInit()
 	ReaderUI.init = function(self, ...)
 		local ret = ReaderUI._original_init_bookloadcover(self, ...)
 		registerMenuToMainMenu(self.menu)
+		rememberCurrentBook(getReaderFile(self))
 		scheduleCloseCover(getOpenCloseDelay())
 		return ret
 	end
@@ -1231,6 +1278,7 @@ end
 ReaderUI = require("apps/reader/readerui")
 patchUIManagerShow()
 patchFileManagerMenu()
+patchFileManagerInit()
 patchShowReaderCoroutine()
 patchReaderInit()
 patchReaderOnClose()
