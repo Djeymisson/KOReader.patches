@@ -15,7 +15,7 @@ local _ = require("gettext")
 
 local PLUGIN_NAME = "BookLoadCover Plus"
 local LOG_PREFIX = PLUGIN_NAME .. " patch:"
-local PATCH_VERSION = "v1.2.1"
+local PATCH_VERSION = "v1.2.2"
 
 local function pluginName()
 	return _("BookLoadCover Plus")
@@ -384,7 +384,8 @@ end
 local function closeCover()
 	if State.cover_widget then
 		local ok, err = pcall(function()
-			UIManager:close(State.cover_widget)
+			UIManager:close(State.cover_widget, "full")
+			UIManager:forceRePaint()
 		end)
 		if not ok then
 			warn("failed to close cover widget", err)
