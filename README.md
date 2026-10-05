@@ -2,7 +2,7 @@
 
 User patches for [KOReader](https://github.com/koreader/koreader) that I have adapted, fixed and tested for my own devices.
 
-> **Disclaimer:** most of these patches are **modifications of work by other developers**, who are credited in the [Patches](#patches) table and in [Credits](#credits). I adapted them to fit my needs: customizing behavior and appearance, fixing bugs I ran into, keeping them compatible with recent KOReader releases, and merging ideas from different versions shared by other users.
+> **Disclaimer:** most of these patches are **modifications of work by other developers**, who are credited in [Credits](#credits). I adapted them to fit my needs: customizing behavior and appearance, fixing bugs I ran into, keeping them compatible with recent KOReader releases, and merging ideas from different versions shared by other users.
 
 ## Contents
 
