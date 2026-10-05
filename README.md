@@ -21,7 +21,7 @@ User patches for [KOReader](https://github.com/koreader/koreader) that I have ad
 
 | Patch | Version | Area | Summary |
 |---|---|---|---|
-| [2-bookloadcover-plus.lua](2-bookloadcover-plus.lua) | 1.4.1 | Reader open/close | Shows the book cover while opening and closing documents. |
+| [2-bookloadcover-plus.lua](2-bookloadcover-plus.lua) | 1.4.2 | Reader open/close | Shows the book cover while opening and closing documents. |
 | [2-browser-folder-cover.lua](2-browser-folder-cover.lua) | 1.0.0 | Cover Browser | Shows folders with a cover image in mosaic view. |
 | [2-finished-books-look.lua](2-finished-books-look.lua) | 1.0.0 | Cover Browser | Fades finished books and adds a centered completion mark. |
 | [2-progress-badge.lua](2-progress-badge.lua) | 1.0.0 | Cover Browser | Adds a reading progress badge to covers. |
@@ -106,6 +106,8 @@ Replaces the opening and closing transitions with the current book cover. Settin
 - **Advanced settings** — extract the cover directly from the document when needed; show the cover on internal reloads/document switches.
 
 Works with the [Bookshelf](https://github.com/AndyHazz/bookshelf.koplugin) plugin. When Bookshelf is the home screen, its own opening effect no longer hides the cover. With Bookshelf's *Instant book close*, the book is only really closed later behind the shelf, so no closing cover is shown then, and reopening that book is instant (no opening cover).
+
+Works with the [SimpleUI](https://github.com/doctorhetfield-cmd/simpleui.koplugin) plugin: closing a book to its home screen (gesture, bottom bar or the reader's file browser button) shows the closing cover. If SimpleUI's own *Book Cover Transition → Show on Close* is also on, the cover may be drawn twice, so keep only one of them enabled.
 
 The menu is translated into Brazilian Portuguese (also used for European Portuguese). Common terms reuse KOReader's own translations, so they follow your interface language; other text falls back to English.
 

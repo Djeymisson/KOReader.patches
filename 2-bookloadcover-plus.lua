@@ -16,7 +16,7 @@ local T = require("ffi/util").template
 
 local PLUGIN_NAME = "BookLoadCover Plus"
 local LOG_PREFIX = PLUGIN_NAME .. " patch:"
-local PATCH_VERSION = "1.4.1"
+local PATCH_VERSION = "1.4.2"
 
 -- Translations for strings that only exist in this patch. Anything not listed
 -- here falls back to KOReader's own catalog, so common terms ("Show",
@@ -84,6 +84,9 @@ local State = {
 	coverbrowser_path_added = false,
 	suppress_closing_notice = false,
 	current_book_path = nil,
+	-- True while KOReader itself closes the reader to reload or switch the
+	-- document (see patchReaderInternalTransitions).
+	internal_transition = false,
 }
 
 local Settings = {
@@ -589,6 +592,24 @@ end
 -- and repeated schedules must not pile up.
 local function cancelScheduledCloseCover()
 	UIManager:unschedule(closeCover)
+end
+
+-- Some home screens (e.g. SimpleUI) raise themselves by reordering the
+-- window stack directly, which ignores `modal` and buries the cover.
+local function keepCoverOnTop()
+	local cover_widget = State.cover_widget
+	local stack = UIManager._window_stack
+	if not cover_widget or not stack or #stack == 0 or stack[#stack].widget == cover_widget then
+		return
+	end
+
+	for i = 1, #stack do
+		if stack[i].widget == cover_widget then
+			table.insert(stack, table.remove(stack, i))
+			UIManager:setDirty(cover_widget, "full")
+			return
+		end
+	end
 end
 
 local function scheduleCloseCover(delay)
@@ -1157,7 +1178,7 @@ local function showCover(filepath, options)
 	return true
 end
 
-local function shouldShowClosingCover(ui, full_refresh)
+local function shouldShowClosingCover(ui)
 	if not shouldShowClosingCoverMode() then
 		return false
 	end
@@ -1166,7 +1187,10 @@ local function shouldShowClosingCover(ui, full_refresh)
 		return false
 	end
 
-	if full_refresh == false and ui.tearing_down and not shouldShowOnInternalTransition() then
+	-- Plugins such as SimpleUI close the reader with the same flags as a
+	-- reload (tearing_down + onClose(false)), so only KOReader's own reload
+	-- and switch paths count as internal.
+	if State.internal_transition and not shouldShowOnInternalTransition() then
 		return false
 	end
 
@@ -1514,7 +1538,7 @@ local function patchReaderOnClose()
 			suppress_started = State.suppress_closing_notice
 		end
 
-		if shouldShowClosingCover(self, full_refresh) then
+		if shouldShowClosingCover(self) then
 			local ok, result = pcall(showCover, self.document.file, {
 				reason = Action.close,
 				open_document = self.document,
@@ -1539,6 +1563,7 @@ local function patchReaderOnClose()
 		end)
 
 		if cover_shown then
+			UIManager:nextTick(keepCoverOnTop)
 			scheduleCloseCover(getAfterCloseDelay())
 		end
 
@@ -1554,6 +1579,35 @@ local function patchReaderOnClose()
 	end
 end
 
+-- KOReader's own paths that close the reader only to reopen it: reloading
+-- the document, switching to another one, and opening a new book while the
+-- reader is still up (ShowingReader).
+local INTERNAL_TRANSITION_METHODS = { "reloadDocument", "switchDocument", "onShowingReader" }
+
+local function patchReaderInternalTransitions()
+	for _, name in ipairs(INTERNAL_TRANSITION_METHODS) do
+		local original_key = "_original_" .. name .. "_bookloadcover"
+		local original = ReaderUI[name]
+		if not ReaderUI[original_key] and type(original) == "function" then
+			ReaderUI[original_key] = original
+			ReaderUI[name] = function(self, ...)
+				if State.internal_transition then
+					return original(self, ...)
+				end
+
+				State.internal_transition = true
+				local ok, ret = pcall(original, self, ...)
+				State.internal_transition = false
+
+				if not ok then
+					error(ret)
+				end
+				return ret
+			end
+		end
+	end
+end
+
 ReaderUI = require("apps/reader/readerui")
 patchUIManagerShow()
 patchFileManagerMenu()
@@ -1561,5 +1615,6 @@ patchFileManagerInit()
 patchShowReaderCoroutine()
 patchReaderInit()
 patchReaderOnClose()
+patchReaderInternalTransitions()
 
 info("initialized successfully")
