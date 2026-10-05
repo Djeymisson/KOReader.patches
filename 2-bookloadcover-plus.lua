@@ -16,7 +16,7 @@ local T = require("ffi/util").template
 
 local PLUGIN_NAME = "BookLoadCover Plus"
 local LOG_PREFIX = PLUGIN_NAME .. " patch:"
-local PATCH_VERSION = "1.4.0"
+local PATCH_VERSION = "1.4.1"
 
 -- Translations for strings that only exist in this patch. Anything not listed
 -- here falls back to KOReader's own catalog, so common terms ("Show",
@@ -562,10 +562,14 @@ local function closeBookInfoDbIfLoaded()
 	end
 end
 
-local function closeCover()
+-- Without an explicit refresh type, UIManager:close() only repaints what was
+-- underneath without refreshing the screen, leaving the cover ghosted on
+-- e-ink until something else triggers a refresh. skip_refresh is for when a
+-- new cover is about to be shown, which brings its own full refresh.
+local function closeCover(skip_refresh)
 	if State.cover_widget then
 		local ok, err = pcall(function()
-			UIManager:close(State.cover_widget)
+			UIManager:close(State.cover_widget, not skip_refresh and "full" or nil)
 		end)
 		if not ok then
 			warn("failed to close cover widget", err)
@@ -682,7 +686,24 @@ local CLOSING_NOTICE_WORD_SETS = {
 	{ "schließen", "buch" }, -- German
 	{ "schlies", "buch" }, -- German fallback without ß
 	{ "geschlossen", "buch" }, -- German ("Buch wird geschlossen…")
-	{ "закры", "кни" }, -- Russian stem fallback
+	-- string.lower() only folds ASCII, so non-Latin stems must skip the
+	-- (possibly capitalized) first letter.
+	{ "акры", "кни" }, -- Russian ("Закрытие книги…")
+	{ "акри", "кни" }, -- Ukrainian ("Закриття книги…")
+}
+
+-- Exact "Closing book…" texts shipped by the Bookshelf plugin, which shows the
+-- notice in its own language catalog rather than KOReader's.
+local KNOWN_CLOSING_NOTICES = {
+	"Closing book…",
+	"A fechar o livro…", -- pt_PT
+	"Затваряне на книгата…", -- bg
+	"Könyv bezárása…", -- hu
+	"Zatvára sa kniha…", -- sk
+	"Đang đóng sách…", -- vi
+	"書籍を閉じ中…", -- ja
+	"关闭书籍…", -- zh_CN
+	"正在關閉書籍…", -- zh_TW
 }
 
 local closing_notice_localized
@@ -690,8 +711,14 @@ local closing_notice_localized
 local function getLocalizedClosingNotices()
 	if not closing_notice_localized then
 		closing_notice_localized = {}
-		for _, candidate in ipairs({ _core("Closing book…"), _core("Closing book..."), _core("Closing book") }) do
+		local candidates = { _core("Closing book…"), _core("Closing book..."), _core("Closing book") }
+		for i = 1, #KNOWN_CLOSING_NOTICES do
+			table.insert(candidates, KNOWN_CLOSING_NOTICES[i])
+		end
+		for _, candidate in ipairs(candidates) do
 			if type(candidate) == "string" and candidate ~= "" then
+				-- Drop the ellipsis so "…" and "..." variants both match.
+				candidate = candidate:gsub("…$", ""):gsub("%.+$", "")
 				table.insert(closing_notice_localized, candidate:lower())
 			end
 		end
@@ -1090,7 +1117,7 @@ local function showCover(filepath, options)
 	end
 
 	cancelScheduledCloseCover()
-	closeCover()
+	closeCover(true)
 
 	local cover_bb, needs_free = findCover(filepath, options)
 	if not cover_bb then
@@ -1108,6 +1135,13 @@ local function showCover(filepath, options)
 		if layout_mode ~= LayoutMode.centered_card and isBookshelfInUse() then
 			-- Opaque full-screen cover: spares repainting the shelf underneath.
 			cover_widget.covers_fullscreen = true
+		end
+		if action == Action.close then
+			-- Plugins such as Bookshelf show a modal "Closing book…" message
+			-- right before the reader closes. UIManager stacks non-modal
+			-- widgets below modal ones, so without this the message would
+			-- stay on top of the cover whenever it isn't suppressed.
+			cover_widget.modal = true
 		end
 		UIManager:show(cover_widget, "full")
 		State.cover_widget = cover_widget

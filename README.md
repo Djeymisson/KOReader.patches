@@ -21,7 +21,7 @@ User patches for [KOReader](https://github.com/koreader/koreader) that I have ad
 
 | Patch | Version | Area | Summary |
 |---|---|---|---|
-| [2-bookloadcover-plus.lua](2-bookloadcover-plus.lua) | 1.4.0 | Reader open/close | Shows the book cover while opening and closing documents. |
+| [2-bookloadcover-plus.lua](2-bookloadcover-plus.lua) | 1.4.1 | Reader open/close | Shows the book cover while opening and closing documents. |
 | [2-browser-folder-cover.lua](2-browser-folder-cover.lua) | 1.0.0 | Cover Browser | Shows folders with a cover image in mosaic view. |
 | [2-finished-books-look.lua](2-finished-books-look.lua) | 1.0.0 | Cover Browser | Fades finished books and adds a centered completion mark. |
 | [2-progress-badge.lua](2-progress-badge.lua) | 1.0.0 | Cover Browser | Adds a reading progress badge to covers. |
