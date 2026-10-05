@@ -6,6 +6,8 @@ This patch combines two effects for books in mosaic view with a "complete" statu
 2. Removes all default corner status icons (e.g., dog-ear, star).
 3. Adds a single, centered "complete" icon on top of the faded cover.
 ]] --
+local PATCH_VERSION = "1.0.0" -- see README.md > Versioning
+
 -- ========================== Edit your preferences here ================================
 -- Set your desired fading amount from 0.0 (no fade) to 1.0 (full white).
 local FADING_AMOUNT = 0.4

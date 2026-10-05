@@ -4,6 +4,8 @@
 -- and incorporates modifications originally made by Isaac_729, adapted and enhanced for KOReader version 2025.10
 -- with additional features (header/footer, margin handling, settings menu).
 ------------------------------------------------------------
+local PATCH_VERSION = "1.0.0" -- see README.md > Versioning
+
 ------------------------------------------------------------
 -- MODULES (REQUIRE)
 ------------------------------------------------------------
@@ -416,6 +418,11 @@ local function buildMenu(reader_ui)
 					end,
 				},
 			},
+			separator = true,
+		},
+		{
+			text = _("Patch version") .. ": v" .. PATCH_VERSION,
+			keep_menu_open = true,
 		},
 	}
 

@@ -15,7 +15,7 @@ local _ = require("gettext")
 
 local PLUGIN_NAME = "BookLoadCover Plus"
 local LOG_PREFIX = PLUGIN_NAME .. " patch:"
-local PATCH_VERSION = "v1.2.1"
+local PATCH_VERSION = "1.2.1"
 
 local function pluginName()
 	return _("BookLoadCover Plus")
@@ -996,7 +996,7 @@ end
 
 local function showVersionInfo()
 	UIManager:show(InfoMessage:new({
-		text = pluginName() .. "\n" .. _("Version") .. ": " .. PATCH_VERSION,
+		text = pluginName() .. "\n" .. _("Version") .. ": v" .. PATCH_VERSION,
 		timeout = 3,
 	}))
 end
@@ -1108,7 +1108,7 @@ function BookLoadCoverMenu:addToMainMenu(menu_items)
 			},
 			{
 				text_func = function()
-					return _("Patch version") .. ": " .. PATCH_VERSION
+					return _("Patch version") .. ": v" .. PATCH_VERSION
 				end,
 				keep_menu_open = false,
 				callback = showVersionInfo,

@@ -9,7 +9,11 @@
 
     This patch overrides the Screensaver.show() function and adds
     items to the Reader and File Manager menus.
-]] -- Core/Device
+]] --
+
+local PATCH_VERSION = "1.0.0" -- see README.md > Versioning
+
+-- Core/Device
 local Device = require("device")
 local Screen = Device.screen
 local Blitbuffer = require("ffi/blitbuffer")
@@ -500,7 +504,12 @@ local function add_options_in(menu)
         help_text = _("This option will only become available, if you have selected 'No fill'."),
         enabled_func = function()
             return G_reader_settings:readSetting("screensaver_img_background") == "none"
-        end
+        end,
+        separator = true
+    })
+    table.insert(items, {
+        text = _("Screensaver patch version") .. ": v" .. PATCH_VERSION,
+        keep_menu_open = true
     })
 end
 

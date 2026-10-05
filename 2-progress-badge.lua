@@ -1,6 +1,8 @@
 --[[
 User patch for Cover Browser plugin to add progress percentage badges in top right corner
 ]] --
+local PATCH_VERSION = "1.0.0" -- see README.md > Versioning
+
 -- ========================== [[ User Preferences ]] ==================================
 -- Adjust font size (0 to 1) relative to corner mark
 local text_size = 0.6

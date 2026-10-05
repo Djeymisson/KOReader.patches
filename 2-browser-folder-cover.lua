@@ -1,3 +1,10 @@
+--[[
+User patch for Cover Browser to display folders with a cover image in mosaic view.
+Uses a custom .cover.<ext> image inside the folder, or the cover of a book in it.
+]] --
+
+local PATCH_VERSION = "1.0.0" -- see README.md > Versioning
+
 local AlphaContainer = require("ui/widget/container/alphacontainer")
 local BD = require("ui/bidi")
 local Blitbuffer = require("ffi/blitbuffer")
@@ -404,6 +411,14 @@ local function patchCoverBrowser(plugin)
                         end
                     })
                 end
+            end
+            local version_text = _("Folder cover patch version") .. ": v" .. PATCH_VERSION
+            if not getMenuItem(menu_items.filebrowser_settings, _("Mosaic and detailed list settings"), version_text) then
+                item.sub_item_table[#item.sub_item_table].separator = true
+                table.insert(item.sub_item_table, {
+                    text = version_text,
+                    keep_menu_open = true
+                })
             end
         end
     end

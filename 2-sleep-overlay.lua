@@ -4,6 +4,8 @@
 -- This patch blends a random overlay image onto the current sleep cover.
 -- Place transparent PNG overlays in the KOReader "sleepoverlays" folder.
 ------------------------------------------------------------
+local PATCH_VERSION = "1.0.0" -- see README.md > Versioning
+
 ------------------------------------------------------------
 -- MODULES (REQUIRE)
 ------------------------------------------------------------
@@ -558,6 +560,12 @@ local function buildMenu(reader_ui)
             enabled = false
         })
     end
+
+    submenu[#submenu].separator = true
+    table.insert(submenu, {
+        text = _("Patch version") .. ": v" .. PATCH_VERSION,
+        keep_menu_open = true
+    })
 
     return {
         text_func = function()
