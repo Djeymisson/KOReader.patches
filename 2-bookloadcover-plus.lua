@@ -15,7 +15,7 @@ local _ = require("gettext")
 
 local PLUGIN_NAME = "BookLoadCover Plus"
 local LOG_PREFIX = PLUGIN_NAME .. " patch:"
-local PATCH_VERSION = "1.2.1"
+local PATCH_VERSION = "1.3.0"
 
 local function pluginName()
 	return _("BookLoadCover Plus")
@@ -47,7 +47,9 @@ local Settings = {
 	close_enabled_legacy = "bookloadcover_close_enabled",
 	extract_enabled = "bookloadcover_extract_enabled",
 	cover_source = "bookloadcover_cover_source",
-	cover_layout = "bookloadcover_cover_layout",
+	open_layout = "bookloadcover_open_layout",
+	close_layout = "bookloadcover_close_layout",
+	cover_layout_legacy = "bookloadcover_cover_layout",
 	card_size_percent = "bookloadcover_card_size_percent",
 	card_rounded_corners = "bookloadcover_card_rounded_corners",
 	close_on_teardown = "bookloadcover_close_on_teardown",
@@ -57,11 +59,15 @@ local Settings = {
 	closing_notice_suppress_delay = "bookloadcover_closing_notice_suppress_delay",
 }
 
+-- Closing-only choice: reuse whatever is set for opening.
+local SAME_AS_OPENING = "same_as_opening"
+
 local Mode = {
 	off = "off",
 	no_transition_widgets = "no_transition_widgets",
 	cover_with_widgets = "cover_with_widgets",
 	cover_only = "cover_only",
+	same_as_opening = SAME_AS_OPENING,
 }
 
 local SourceMode = {
@@ -75,12 +81,19 @@ local LayoutMode = {
 	fit_white = "fit_white",
 	fill_zoom = "fill_zoom",
 	centered_card = "centered_card",
+	same_as_opening = SAME_AS_OPENING,
+}
+
+local Action = {
+	open = "open",
+	close = "close",
 }
 
 local DEFAULT_OPEN_MODE = Mode.cover_only
 local DEFAULT_CLOSE_MODE = Mode.cover_only
 local DEFAULT_SOURCE_MODE = SourceMode.balanced
 local DEFAULT_LAYOUT_MODE = LayoutMode.stretch
+local DEFAULT_CLOSE_LAYOUT_MODE = LayoutMode.same_as_opening
 local DEFAULT_CARD_SIZE_PERCENT = 70
 
 local MODE_ORDER = {
@@ -123,33 +136,39 @@ local VALID_LAYOUT_MODES = {
 	[LayoutMode.centered_card] = true,
 }
 
+-- Labels are built once at load time instead of on every lookup.
+local MODE_LABELS = {
+	[Mode.off] = _("KOReader default (message, no cover)"),
+	[Mode.no_transition_widgets] = _("Nothing (no cover, no message)"),
+	[Mode.cover_with_widgets] = _("Cover + KOReader message"),
+	[Mode.cover_only] = _("Cover only"),
+	[Mode.same_as_opening] = _("Same as opening"),
+}
+
+local SOURCE_MODE_LABELS = {
+	[SourceMode.balanced] = _("Balanced (faster)"),
+	[SourceMode.best_quality] = _("Best quality"),
+}
+
+local LAYOUT_MODE_LABELS = {
+	[LayoutMode.stretch] = _("Stretch to screen"),
+	[LayoutMode.fit_black] = _("Fit to screen (black background)"),
+	[LayoutMode.fit_white] = _("Fit to screen (white background)"),
+	[LayoutMode.fill_zoom] = _("Fill screen (zoom/crop)"),
+	[LayoutMode.centered_card] = _("Centered card"),
+	[LayoutMode.same_as_opening] = _("Same as opening"),
+}
+
 local function modeLabel(mode)
-	local labels = {
-		[Mode.off] = _("Default widgets only"),
-		[Mode.no_transition_widgets] = _("No cover or default widgets"),
-		[Mode.cover_with_widgets] = _("Cover + default widgets"),
-		[Mode.cover_only] = _("Cover only"),
-	}
-	return labels[mode] or labels[Mode.cover_only]
+	return MODE_LABELS[mode] or MODE_LABELS[Mode.cover_only]
 end
 
 local function sourceModeLabel(mode)
-	local labels = {
-		[SourceMode.balanced] = _("Balanced (faster)"),
-		[SourceMode.best_quality] = _("Best quality"),
-	}
-	return labels[mode] or labels[SourceMode.balanced]
+	return SOURCE_MODE_LABELS[mode] or SOURCE_MODE_LABELS[SourceMode.balanced]
 end
 
 local function layoutModeLabel(mode)
-	local labels = {
-		[LayoutMode.stretch] = _("Stretch to screen"),
-		[LayoutMode.fit_black] = _("Fit to screen (black background)"),
-		[LayoutMode.fit_white] = _("Fit to screen (white background)"),
-		[LayoutMode.fill_zoom] = _("Fill screen (zoom/crop)"),
-		[LayoutMode.centered_card] = _("Centered card"),
-	}
-	return labels[mode] or labels[LayoutMode.stretch]
+	return LAYOUT_MODE_LABELS[mode] or LAYOUT_MODE_LABELS[LayoutMode.stretch]
 end
 
 local function readMode(key, default_mode)
@@ -162,9 +181,41 @@ local function getCoverSourceMode()
 	return VALID_SOURCE_MODES[mode] and mode or DEFAULT_SOURCE_MODE
 end
 
-local function getCoverLayoutMode()
-	local mode = G_reader_settings:readSetting(Settings.cover_layout, DEFAULT_LAYOUT_MODE)
-	return VALID_LAYOUT_MODES[mode] and mode or DEFAULT_LAYOUT_MODE
+local function readLayoutSetting(key)
+	local mode = G_reader_settings:readSetting(key)
+	return VALID_LAYOUT_MODES[mode] and mode or nil
+end
+
+-- Older versions stored a single layout for both actions; it is used as the
+-- opening layout until one is chosen explicitly.
+local function getOpenLayoutMode()
+	return readLayoutSetting(Settings.open_layout)
+		or readLayoutSetting(Settings.cover_layout_legacy)
+		or DEFAULT_LAYOUT_MODE
+end
+
+-- Raw closing choice, which may be "same as opening".
+local function getCloseLayoutSetting()
+	local mode = G_reader_settings:readSetting(Settings.close_layout, DEFAULT_CLOSE_LAYOUT_MODE)
+	if mode == LayoutMode.same_as_opening or VALID_LAYOUT_MODES[mode] then
+		return mode
+	end
+	return DEFAULT_CLOSE_LAYOUT_MODE
+end
+
+local function getCloseLayoutMode()
+	local mode = getCloseLayoutSetting()
+	if mode == LayoutMode.same_as_opening then
+		return getOpenLayoutMode()
+	end
+	return mode
+end
+
+local function getLayoutModeForAction(action)
+	if action == Action.close then
+		return getCloseLayoutMode()
+	end
+	return getOpenLayoutMode()
 end
 
 local function getCardSizePercent()
@@ -183,7 +234,8 @@ local function getOpenMode()
 	return readMode(Settings.open_mode, DEFAULT_OPEN_MODE)
 end
 
-local function getCloseMode()
+-- Raw closing choice, which may be "same as opening".
+local function getCloseModeSetting()
 	if
 		G_reader_settings:hasNot(Settings.close_mode)
 		and G_reader_settings:has(Settings.close_enabled_legacy)
@@ -192,7 +244,19 @@ local function getCloseMode()
 		return Mode.off
 	end
 
-	return readMode(Settings.close_mode, DEFAULT_CLOSE_MODE)
+	local mode = G_reader_settings:readSetting(Settings.close_mode, DEFAULT_CLOSE_MODE)
+	if mode == Mode.same_as_opening or VALID_MODES[mode] then
+		return mode
+	end
+	return DEFAULT_CLOSE_MODE
+end
+
+local function getCloseMode()
+	local mode = getCloseModeSetting()
+	if mode == Mode.same_as_opening then
+		return getOpenMode()
+	end
+	return mode
 end
 
 local function modeShowsCover(mode)
@@ -396,7 +460,14 @@ local function closeCover()
 	closeBookInfoDbIfLoaded()
 end
 
+-- A pending close from a previous transition must not close a newer cover,
+-- and repeated schedules must not pile up.
+local function cancelScheduledCloseCover()
+	UIManager:unschedule(closeCover)
+end
+
 local function scheduleCloseCover(delay)
+	cancelScheduledCloseCover()
 	UIManager:scheduleIn(delay, closeCover)
 end
 
@@ -412,12 +483,13 @@ end
 
 local function scheduleStopSuppressingClosingNotice(delay)
 	if State.suppress_closing_notice then
+		UIManager:unschedule(stopSuppressingClosingNotice)
 		UIManager:scheduleIn(delay, stopSuppressingClosingNotice)
 	end
 end
 
 local function setMode(key, mode)
-	if VALID_MODES[mode] then
+	if VALID_MODES[mode] or (key == Settings.close_mode and mode == Mode.same_as_opening) then
 		saveSetting(key, mode)
 	end
 end
@@ -428,10 +500,18 @@ local function setCoverSourceMode(mode)
 	end
 end
 
-local function setCoverLayoutMode(mode)
-	if VALID_LAYOUT_MODES[mode] then
-		saveSetting(Settings.cover_layout, mode)
+local function setLayoutModeForAction(action, mode)
+	if action == Action.close then
+		if mode == LayoutMode.same_as_opening or VALID_LAYOUT_MODES[mode] then
+			saveSetting(Settings.close_layout, mode)
+		end
+	elseif VALID_LAYOUT_MODES[mode] then
+		saveSetting(Settings.open_layout, mode)
 	end
+end
+
+local function anyLayoutUsesCenteredCard()
+	return getOpenLayoutMode() == LayoutMode.centered_card or getCloseLayoutMode() == LayoutMode.centered_card
 end
 
 local function setCardSizePercent(percent)
@@ -441,21 +521,19 @@ local function setCardSizePercent(percent)
 	end
 end
 
+local WIDGET_TEXT_FIELDS = { "text", "message", "title", "info_text", "content", "label" }
+
+-- The "Closing book…" notice is a short message; longer texts are skipped
+-- without lowercasing or scanning them.
+local MAX_NOTICE_TEXT_LENGTH = 120
+
 local function getWidgetText(widget)
 	if type(widget) ~= "table" then
 		return nil
 	end
 
-	local candidates = {
-		widget.text,
-		widget.message,
-		widget.title,
-		widget.info_text,
-		widget.content,
-		widget.label,
-	}
-
-	for _, value in ipairs(candidates) do
+	for i = 1, #WIDGET_TEXT_FIELDS do
+		local value = widget[WIDGET_TEXT_FIELDS[i]]
 		if type(value) == "string" and value ~= "" then
 			return value
 		end
@@ -465,46 +543,55 @@ local function getWidgetText(widget)
 end
 
 local function textHasAllWords(text, words)
-	for _, word in ipairs(words) do
-		if not text:find(word, 1, true) then
+	for i = 1, #words do
+		if not text:find(words[i], 1, true) then
 			return false
 		end
 	end
 	return true
 end
 
+local CLOSING_NOTICE_WORD_SETS = {
+	{ "closing", "book" }, -- English
+	{ "fechando", "livro" }, -- Portuguese
+	{ "chiusura", "libro" }, -- Italian
+	{ "chiudendo", "libro" }, -- Italian alternative
+	{ "fermeture", "livre" }, -- French
+	{ "cerrando", "libro" }, -- Spanish
+	{ "schließen", "buch" }, -- German
+	{ "schlies", "buch" }, -- German fallback without ß
+	{ "закры", "кни" }, -- Russian stem fallback
+}
+
+local closing_notice_localized
+
+local function getLocalizedClosingNotices()
+	if not closing_notice_localized then
+		closing_notice_localized = {}
+		for _, candidate in ipairs({ _("Closing book…"), _("Closing book..."), _("Closing book") }) do
+			if type(candidate) == "string" and candidate ~= "" then
+				table.insert(closing_notice_localized, candidate:lower())
+			end
+		end
+	end
+	return closing_notice_localized
+end
+
 local function textLooksLikeClosingBookNotice(text)
-	if type(text) ~= "string" then
+	if type(text) ~= "string" or #text > MAX_NOTICE_TEXT_LENGTH then
 		return false
 	end
 
 	local normalized = text:lower()
-	local localized = {
-		_("Closing book…"),
-		_("Closing book..."),
-		_("Closing book"),
-	}
-
-	for _, candidate in ipairs(localized) do
-		if type(candidate) == "string" and candidate ~= "" and normalized:find(candidate:lower(), 1, true) then
+	local localized = getLocalizedClosingNotices()
+	for i = 1, #localized do
+		if normalized:find(localized[i], 1, true) then
 			return true
 		end
 	end
 
-	local word_sets = {
-		{ "closing", "book" }, -- English
-		{ "fechando", "livro" }, -- Portuguese
-		{ "chiusura", "libro" }, -- Italian
-		{ "chiudendo", "libro" }, -- Italian alternative
-		{ "fermeture", "livre" }, -- French
-		{ "cerrando", "libro" }, -- Spanish
-		{ "schließen", "buch" }, -- German
-		{ "schlies", "buch" }, -- German fallback without ß
-		{ "закры", "кни" }, -- Russian stem fallback
-	}
-
-	for _, words in ipairs(word_sets) do
-		if textHasAllWords(normalized, words) then
+	for i = 1, #CLOSING_NOTICE_WORD_SETS do
+		if textHasAllWords(normalized, CLOSING_NOTICE_WORD_SETS[i]) then
 			return true
 		end
 	end
@@ -520,15 +607,27 @@ local function widgetLooksLikeClosingBookNotice(widget)
 	return textLooksLikeClosingBookNotice(getWidgetText(widget))
 end
 
+local Lazy = {}
+
+-- Resolves a module once and remembers the result (including failure).
+local function lazyRequire(module_name)
+	local cached = Lazy[module_name]
+	if cached == nil then
+		cached = safeRequire(module_name) or false
+		Lazy[module_name] = cached
+	end
+	return cached or nil
+end
+
 local function getCoverFromCoverImageCache(filepath)
 	local cache_path = G_reader_settings:readSetting("cover_image_cache_path")
 	if not cache_path or lfs.attributes(cache_path, "mode") ~= "directory" then
 		return nil
 	end
 
-	local util = safeRequire("util")
-	local sha2 = safeRequire("ffi/sha2")
-	local RenderImage = safeRequire("ui/renderimage")
+	local util = lazyRequire("util")
+	local sha2 = lazyRequire("ffi/sha2")
+	local RenderImage = lazyRequire("ui/renderimage")
 	if not util or not sha2 or not sha2.md5 or not RenderImage then
 		return nil
 	end
@@ -684,49 +783,66 @@ local function extractCoverFromDocument(filepath, force_extract)
 	return nil
 end
 
+local function tryCoverSource(source, ...)
+	local ok, cover_bb, needs_free = pcall(source, ...)
+	if ok and cover_bb then
+		return cover_bb, needs_free
+	end
+	if not ok then
+		warn("cover source failed", cover_bb)
+	end
+	return nil
+end
+
 local function findCover(filepath, options)
 	options = options or {}
 
-	local sources = {}
+	local open_document = options.open_document
+	local allow_extract = options.allow_direct_extract ~= false
+	local cover_bb, needs_free
 
 	if shouldPreferBestQualityCover() then
-		if options.open_document then
-			table.insert(sources, function()
-				return getCoverFromOpenDocument(options.open_document)
-			end)
+		if open_document then
+			cover_bb, needs_free = tryCoverSource(getCoverFromOpenDocument, open_document)
+			if cover_bb then
+				return cover_bb, needs_free
+			end
 		end
 
-		if options.allow_direct_extract ~= false then
-			table.insert(sources, function()
-				return extractCoverFromDocument(filepath, true)
-			end)
+		if allow_extract then
+			cover_bb, needs_free = tryCoverSource(extractCoverFromDocument, filepath, true)
+			if cover_bb then
+				return cover_bb, needs_free
+			end
 		end
 
-		table.insert(sources, getCoverFromDB)
-		table.insert(sources, getCoverFromCoverImageCache)
-	else
-		table.insert(sources, getCoverFromCoverImageCache)
-		table.insert(sources, getCoverFromDB)
-
-		if options.open_document then
-			table.insert(sources, function()
-				return getCoverFromOpenDocument(options.open_document)
-			end)
+		cover_bb, needs_free = tryCoverSource(getCoverFromDB, filepath)
+		if cover_bb then
+			return cover_bb, needs_free
 		end
 
-		if options.allow_direct_extract ~= false then
-			table.insert(sources, extractCoverFromDocument)
+		return tryCoverSource(getCoverFromCoverImageCache, filepath)
+	end
+
+	cover_bb, needs_free = tryCoverSource(getCoverFromCoverImageCache, filepath)
+	if cover_bb then
+		return cover_bb, needs_free
+	end
+
+	cover_bb, needs_free = tryCoverSource(getCoverFromDB, filepath)
+	if cover_bb then
+		return cover_bb, needs_free
+	end
+
+	if open_document then
+		cover_bb, needs_free = tryCoverSource(getCoverFromOpenDocument, open_document)
+		if cover_bb then
+			return cover_bb, needs_free
 		end
 	end
 
-	for _, source in ipairs(sources) do
-		local ok, cover_bb, needs_free = pcall(source, filepath)
-		if ok and cover_bb then
-			return cover_bb, needs_free
-		end
-		if not ok then
-			warn("cover source failed", cover_bb)
-		end
+	if allow_extract then
+		return tryCoverSource(extractCoverFromDocument, filepath)
 	end
 
 	return nil
@@ -794,9 +910,8 @@ local function makeCenteredCardCoverWidget(cover_bb, cover_w, cover_h, screen_w,
 	})
 end
 
-local function makeCoverImageWidget(cover_bb)
+local function makeCoverImageWidget(cover_bb, layout_mode)
 	local screen_w, screen_h = Screen:getWidth(), Screen:getHeight()
-	local layout_mode = getCoverLayoutMode()
 
 	if layout_mode == LayoutMode.stretch then
 		return makeStretchCoverWidget(cover_bb, screen_w, screen_h)
@@ -852,6 +967,7 @@ local function showCover(filepath, options)
 		return false
 	end
 
+	cancelScheduledCloseCover()
 	closeCover()
 
 	local cover_bb, needs_free = findCover(filepath, options)
@@ -863,20 +979,20 @@ local function showCover(filepath, options)
 		State.owned_cover_bb = cover_bb
 	end
 
-	local cover_widget = makeCoverImageWidget(cover_bb)
-
+	local action = options and options.reason or Action.open
 	local ok, err = pcall(function()
+		local cover_widget = makeCoverImageWidget(cover_bb, getLayoutModeForAction(action))
 		UIManager:show(cover_widget, "full")
+		State.cover_widget = cover_widget
 		UIManager:forceRePaint()
 	end)
 
 	if not ok then
 		warn("failed to display cover", err)
-		freeOwnedCover()
+		closeCover()
 		return false
 	end
 
-	State.cover_widget = cover_widget
 	return true
 end
 
@@ -896,27 +1012,29 @@ local function shouldShowClosingCover(ui, full_refresh)
 	return true
 end
 
-local function makeModeMenu(setting_key, default_mode, get_current_mode)
+local function refreshMenu(touchmenu_instance)
+	if touchmenu_instance then
+		touchmenu_instance:updateItems()
+	end
+end
+
+local function makeRadioMenu(values, label_func, get_current, set_value, on_change)
 	local items = {}
 
-	for _, mode in ipairs(MODE_ORDER) do
+	for _, value in ipairs(values) do
 		table.insert(items, {
-			text = modeLabel(mode),
+			text = label_func(value),
 			radio = true,
 			keep_menu_open = true,
 			checked_func = function()
-				local current_mode = get_current_mode and get_current_mode() or readMode(setting_key, default_mode)
-				return current_mode == mode
+				return get_current() == value
 			end,
 			callback = function(touchmenu_instance)
-				setMode(setting_key, mode)
-				if mode == Mode.off or mode == Mode.no_transition_widgets then
-					stopSuppressingClosingNotice()
-					closeCover()
+				set_value(value)
+				if on_change then
+					on_change(value)
 				end
-				if touchmenu_instance then
-					touchmenu_instance:updateItems()
-				end
+				refreshMenu(touchmenu_instance)
 			end,
 		})
 	end
@@ -924,74 +1042,87 @@ local function makeModeMenu(setting_key, default_mode, get_current_mode)
 	return items
 end
 
-local function makeSourceModeMenu()
-	local items = {}
+-- Builds the radio list for one action. Closing gets an extra
+-- "Same as opening" entry on top, which shows the value it resolves to.
+local function makeActionChoiceMenu(action, order, label_func, get_open, get_close_setting, set_value, on_change)
+	local get_current = action == Action.close and get_close_setting or get_open
+	local items = makeRadioMenu(order, label_func, get_current, set_value, on_change)
 
-	for _, mode in ipairs(SOURCE_MODE_ORDER) do
-		table.insert(items, {
-			text = sourceModeLabel(mode),
-			radio = true,
-			keep_menu_open = true,
-			checked_func = function()
-				return getCoverSourceMode() == mode
-			end,
-			callback = function(touchmenu_instance)
-				setCoverSourceMode(mode)
-				if touchmenu_instance then
-					touchmenu_instance:updateItems()
-				end
-			end,
-		})
+	if action == Action.close then
+		local same = makeRadioMenu({ SAME_AS_OPENING }, label_func, get_current, set_value, on_change)[1]
+		same.text = nil
+		same.text_func = function()
+			return label_func(SAME_AS_OPENING) .. " (" .. label_func(get_open()) .. ")"
+		end
+		same.separator = true
+		table.insert(items, 1, same)
 	end
 
 	return items
 end
 
-local function makeLayoutModeMenu()
-	local items = {}
-
-	for _, mode in ipairs(LAYOUT_MODE_ORDER) do
-		table.insert(items, {
-			text = layoutModeLabel(mode),
-			radio = true,
-			keep_menu_open = true,
-			checked_func = function()
-				return getCoverLayoutMode() == mode
-			end,
-			callback = function(touchmenu_instance)
-				setCoverLayoutMode(mode)
-				if touchmenu_instance then
-					touchmenu_instance:updateItems()
-				end
-			end,
-		})
-	end
-
-	return items
+local function makeModeMenu(action)
+	local setting_key = action == Action.close and Settings.close_mode or Settings.open_mode
+	return makeActionChoiceMenu(action, MODE_ORDER, modeLabel, getOpenMode, getCloseModeSetting, function(mode)
+		setMode(setting_key, mode)
+	end, function()
+		if not modeShowsCover(getOpenMode()) and not modeShowsCover(getCloseMode()) then
+			stopSuppressingClosingNotice()
+			cancelScheduledCloseCover()
+			closeCover()
+		end
+	end)
 end
+
+local function makeLayoutModeMenu(action)
+	return makeActionChoiceMenu(action, LAYOUT_MODE_ORDER, layoutModeLabel, getOpenLayoutMode, getCloseLayoutSetting, function(mode)
+		setLayoutModeForAction(action, mode)
+	end)
+end
+
+local CARD_SIZE_OPTIONS = { 40, 50, 60, 70, 80, 90 }
 
 local function makeCardSizeMenu()
-	local items = {}
-	local options = { 40, 50, 60, 70, 80, 90 }
+	return makeRadioMenu(CARD_SIZE_OPTIONS, function(percent)
+		return percent .. "%"
+	end, getCardSizePercent, setCardSizePercent)
+end
 
-	for _, percent in ipairs(options) do
-		table.insert(items, {
-			text = percent .. "%",
-			radio = true,
-			keep_menu_open = true,
-			checked_func = function()
-				return getCardSizePercent() == percent
-			end,
-			callback = function(touchmenu_instance)
-				setCardSizePercent(percent)
-				if touchmenu_instance then
-					touchmenu_instance:updateItems()
+local function makeActionMenu(action)
+	local is_close = action == Action.close
+	local get_mode = is_close and getCloseMode or getOpenMode
+
+	return {
+		{
+			text_func = function()
+				if is_close and getCloseModeSetting() == Mode.same_as_opening then
+					return _("Show") .. ": " .. modeLabel(Mode.same_as_opening)
 				end
+				return _("Show") .. ": " .. modeLabel(get_mode())
 			end,
-		})
-	end
-
-	return items
+			help_text = is_close
+					and _("What appears on screen while the book is closing and KOReader returns to the file browser. Choose 'Same as opening' to reuse the opening choice.")
+				or _("What appears on screen while the book is loading."),
+			keep_menu_open = true,
+			sub_item_table = makeModeMenu(action),
+		},
+		{
+			text_func = function()
+				if is_close and getCloseLayoutSetting() == LayoutMode.same_as_opening then
+					return _("Cover style") .. ": " .. layoutModeLabel(LayoutMode.same_as_opening)
+				end
+				return _("Cover style") .. ": " .. layoutModeLabel(getLayoutModeForAction(action))
+			end,
+			help_text = is_close
+					and _("How the cover looks on screen when closing a book: stretched, fitted, zoomed or as a centered card. Choose 'Same as opening' to reuse the opening style.")
+				or _("How the cover looks on screen when opening a book: stretched, fitted, zoomed or as a centered card."),
+			enabled_func = function()
+				return modeShowsCover(get_mode())
+			end,
+			keep_menu_open = true,
+			sub_item_table = makeLayoutModeMenu(action),
+		},
+	}
 end
 
 local function showVersionInfo()
@@ -1012,96 +1143,73 @@ function BookLoadCoverMenu:addToMainMenu(menu_items)
 		keep_menu_open = true,
 		sub_item_table = {
 			{
-				text = _("Transition behavior"),
+				text = _("When opening a book"),
+				help_text = _("What to show, and the cover style, while a book is opening."),
+				keep_menu_open = true,
+				sub_item_table = makeActionMenu(Action.open),
+			},
+			{
+				text = _("When closing a book"),
+				help_text = _("What to show, and the cover style, while a book is closing."),
+				keep_menu_open = true,
+				sub_item_table = makeActionMenu(Action.close),
+				separator = true,
+			},
+			{
+				text = _("Centered card options"),
+				help_text = _("Size and corners of the card. Applies to opening and closing whenever their cover style is 'Centered card'."),
+				enabled_func = anyLayoutUsesCenteredCard,
 				keep_menu_open = true,
 				sub_item_table = {
 					{
 						text_func = function()
-							return _("Opening") .. ": " .. modeLabel(getOpenMode())
+							return _("Size") .. ": " .. getCardSizePercent() .. "%"
 						end,
 						keep_menu_open = true,
-						sub_item_table = makeModeMenu(Settings.open_mode, DEFAULT_OPEN_MODE, getOpenMode),
+						sub_item_table = makeCardSizeMenu(),
 					},
 					{
-						text_func = function()
-							return _("Closing") .. ": " .. modeLabel(getCloseMode())
-						end,
+						text = _("Rounded corners"),
+						checked_func = useRoundedCardCorners,
 						keep_menu_open = true,
-						sub_item_table = makeModeMenu(Settings.close_mode, DEFAULT_CLOSE_MODE, getCloseMode),
+						callback = function(touchmenu_instance)
+							saveSetting(Settings.card_rounded_corners, not useRoundedCardCorners())
+							refreshMenu(touchmenu_instance)
+						end,
 					},
 				},
 			},
 			{
-				text = _("Cover display"),
+				text_func = function()
+					return _("Cover source") .. ": " .. sourceModeLabel(getCoverSourceMode())
+				end,
+				help_text = _("Balanced uses cached covers first (fast). Best quality extracts the cover from the document, which looks sharper but can slow down opening."),
 				keep_menu_open = true,
-				sub_item_table = {
-					{
-						text_func = function()
-							return _("Cover source") .. ": " .. sourceModeLabel(getCoverSourceMode())
-						end,
-						keep_menu_open = true,
-						sub_item_table = makeSourceModeMenu(),
-					},
-					{
-						text_func = function()
-							return _("Cover layout") .. ": " .. layoutModeLabel(getCoverLayoutMode())
-						end,
-						keep_menu_open = true,
-						sub_item_table = makeLayoutModeMenu(),
-					},
-					{
-						text = _("Centered card"),
-						enabled_func = function()
-							return getCoverLayoutMode() == LayoutMode.centered_card
-						end,
-						keep_menu_open = true,
-						sub_item_table = {
-							{
-								text_func = function()
-									return _("Size") .. ": " .. getCardSizePercent() .. "%"
-								end,
-								keep_menu_open = true,
-								sub_item_table = makeCardSizeMenu(),
-							},
-							{
-								text = _("Rounded corners"),
-								checked_func = useRoundedCardCorners,
-								keep_menu_open = true,
-								callback = function(touchmenu_instance)
-									saveSetting(Settings.card_rounded_corners, not useRoundedCardCorners())
-									if touchmenu_instance then
-										touchmenu_instance:updateItems()
-									end
-								end,
-							},
-						},
-					},
-				},
+				sub_item_table = makeRadioMenu(SOURCE_MODE_ORDER, sourceModeLabel, getCoverSourceMode, setCoverSourceMode),
 			},
 			{
 				text = _("Advanced"),
 				keep_menu_open = true,
+				separator = true,
 				sub_item_table = {
 					{
 						text = _("Extract cover directly from document when needed"),
+						help_text = _("If no cached cover is found, open the document to read its cover. Slower for large books."),
 						checked_func = shouldExtractFromDocument,
 						keep_menu_open = true,
 						callback = function(touchmenu_instance)
 							saveSetting(Settings.extract_enabled, not shouldExtractFromDocument())
-							if touchmenu_instance then
-								touchmenu_instance:updateItems()
-							end
+							refreshMenu(touchmenu_instance)
 						end,
 					},
 					{
 						text = _("Show cover on internal reload/document switch"),
+						help_text = _("Also show the cover when KOReader reloads the current book (e.g. after changing some document settings)."),
 						checked_func = shouldShowOnInternalTransition,
 						keep_menu_open = true,
 						callback = function(touchmenu_instance)
 							saveSetting(Settings.close_on_teardown, not shouldShowOnInternalTransition())
-							if touchmenu_instance then
-								touchmenu_instance:updateItems()
-							end
+							refreshMenu(touchmenu_instance)
 						end,
 					},
 				},
@@ -1162,9 +1270,11 @@ local function patchUIManagerShow()
 	UIManager._original_show_bookloadcover = UIManager.show
 
 	UIManager.show = function(self, widget, ...)
+		-- Called for every widget: check the cheap suppression state before
+		-- inspecting the widget text.
 		if
-			widgetLooksLikeClosingBookNotice(widget)
-			and (State.suppress_closing_notice or shouldPreSuppressClosingNotice())
+			(State.suppress_closing_notice or shouldPreSuppressClosingNotice())
+			and widgetLooksLikeClosingBookNotice(widget)
 		then
 			startSuppressingClosingNotice()
 			return widget
@@ -1184,7 +1294,7 @@ local function patchShowReaderCoroutine()
 	ReaderUI.showReaderCoroutine = function(self, file, provider, seamless)
 		if shouldShowOpeningCoverForRequest(self, file, seamless) then
 			local ok, result = pcall(showCover, file, {
-				reason = "open",
+				reason = Action.open,
 				allow_direct_extract = true,
 			})
 			if not ok then
@@ -1214,7 +1324,9 @@ local function patchReaderInit()
 		local ret = ReaderUI._original_init_bookloadcover(self, ...)
 		registerMenuToMainMenu(self.menu)
 		rememberCurrentBook(getReaderFile(self))
-		scheduleCloseCover(getOpenCloseDelay())
+		if State.cover_widget then
+			scheduleCloseCover(getOpenCloseDelay())
+		end
 		return ret
 	end
 end
@@ -1237,7 +1349,7 @@ local function patchReaderOnClose()
 
 		if shouldShowClosingCover(self, full_refresh) then
 			local ok, result = pcall(showCover, self.document.file, {
-				reason = "close",
+				reason = Action.close,
 				open_document = self.document,
 				allow_direct_extract = false,
 			})

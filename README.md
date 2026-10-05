@@ -21,7 +21,7 @@ User patches for [KOReader](https://github.com/koreader/koreader) that I have ad
 
 | Patch | Version | Area | Summary |
 |---|---|---|---|
-| [2-bookloadcover-plus.lua](2-bookloadcover-plus.lua) | 1.2.1 | Reader open/close | Shows the book cover while opening and closing documents. |
+| [2-bookloadcover-plus.lua](2-bookloadcover-plus.lua) | 1.3.0 | Reader open/close | Shows the book cover while opening and closing documents. |
 | [2-browser-folder-cover.lua](2-browser-folder-cover.lua) | 1.0.0 | Cover Browser | Shows folders with a cover image in mosaic view. |
 | [2-finished-books-look.lua](2-finished-books-look.lua) | 1.0.0 | Cover Browser | Fades finished books and adds a centered completion mark. |
 | [2-progress-badge.lua](2-progress-badge.lua) | 1.0.0 | Cover Browser | Adds a reading progress badge to covers. |
@@ -98,11 +98,14 @@ When changing a patch, bump `PATCH_VERSION` and update the [Patches](#patches) t
 
 Replaces the opening and closing transitions with the current book cover. Settings live in **☰ → Settings → BookLoadCover Plus**.
 
-- **Transition behavior** — for opening and closing separately: default widgets only, cover + default widgets, cover only, or no cover or default widgets.
-- **Cover display**
-  - *Cover source*: **Balanced (faster)** tries cached or already available covers first; **Best quality** extracts the cover directly from the document when possible, which looks better but can slow down opening.
-  - *Cover layout*: stretch to screen, fit to screen (black or white background), fill screen (zoom/crop) or **centered card** (adjustable size, optional rounded corners).
+- **When opening a book** / **When closing a book** — configured separately:
+  - *Show*: KOReader default (message, no cover), cover + KOReader message, cover only, or nothing (no cover, no message). Closing can also use **Same as opening**.
+  - *Cover style*: stretch to screen, fit to screen (black or white background), fill screen (zoom/crop) or **centered card**. Closing can also use **Same as opening** (the default). For example: full screen when opening and a centered card when closing.
+- **Centered card options** — card size and rounded corners, used by whichever action has the *Centered card* style.
+- **Cover source** — **Balanced (faster)** tries cached or already available covers first; **Best quality** extracts the cover directly from the document when possible, which looks better but can slow down opening.
 - **Advanced** — extract the cover directly from the document when needed; show the cover on internal reloads/document switches.
+
+Most items show an explanation on long-press. Settings from versions before 1.3.0 are kept: the old single *Cover layout* setting becomes the opening *Cover style*, and closing defaults to *Same as opening*.
 
 ### 2-browser-folder-cover.lua
 
