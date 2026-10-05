@@ -15,7 +15,7 @@ local _ = require("gettext")
 
 local PLUGIN_NAME = "BookLoadCover Plus"
 local LOG_PREFIX = PLUGIN_NAME .. " patch:"
-local PATCH_VERSION = "1.3.0"
+local PATCH_VERSION = "1.3.1"
 
 local function pluginName()
 	return _("BookLoadCover Plus")
@@ -293,8 +293,80 @@ local function resetCurrentBook()
 	State.current_book_path = nil
 end
 
+-- Bookshelf plugin (bookshelf.koplugin) integration. While it is the home
+-- screen, its full-screen shelf widget stays on the window stack (under the
+-- reader, or above a "parked" one). The module check keeps this free when
+-- the plugin is not installed or not loaded.
+local BOOKSHELF_WIDGET_MODULE = "lib/bookshelf_widget"
+local BOOKSHELF_PARK_MODULE = "lib/bookshelf_reader_park"
+local BOOKSHELF_WIDGET_NAME = "bookshelf"
+
+local function isBookshelfInUse()
+	if not package.loaded[BOOKSHELF_WIDGET_MODULE] then
+		return false
+	end
+
+	local stack = UIManager._window_stack
+	if not stack then
+		return false
+	end
+
+	for i = 1, #stack do
+		local widget = stack[i].widget
+		if widget and widget.name == BOOKSHELF_WIDGET_NAME then
+			return true
+		end
+	end
+	return false
+end
+
+-- Bookshelf's "Instant book close" leaves the book open under the shelf and
+-- really closes it later (after ~30s idle, on a menu tap...), behind the shelf.
+local function isBookshelfFinishingParkedClose()
+	local Park = package.loaded[BOOKSHELF_PARK_MODULE]
+	if type(Park) ~= "table" or type(Park.isFinishingClose) ~= "function" then
+		return false
+	end
+
+	local ok, finishing = pcall(Park.isFinishingClose)
+	return ok and finishing == true
+end
+
+local function isReaderCoveredByFullscreenWidget(ui)
+	local stack = UIManager._window_stack
+	if not stack then
+		return false
+	end
+
+	local reader_index
+	for i = #stack, 1, -1 do
+		if stack[i].widget == ui then
+			reader_index = i
+			break
+		end
+	end
+	if not reader_index then
+		return false
+	end
+
+	for i = reader_index + 1, #stack do
+		local widget = stack[i].widget
+		if widget and widget ~= State.cover_widget and widget.covers_fullscreen then
+			return true
+		end
+	end
+	return false
+end
+
 local function looksLikeInternalOpening(ui, file, seamless)
-	return seamless == true or sameFile(getReaderFile(ui), file) or sameFile(State.current_book_path, file)
+	-- Bookshelf opens every book seamlessly when its "Cover opening effect" is
+	-- on, so there seamless is no reload hint; ReaderUI:reloadDocument marks
+	-- the instance with `reloading` instead.
+	if seamless == true and (not isBookshelfInUse() or (ui and ui.reloading)) then
+		return true
+	end
+
+	return sameFile(getReaderFile(ui), file) or sameFile(State.current_book_path, file)
 end
 
 local function shouldShowOpeningCoverForRequest(ui, file, seamless)
@@ -457,7 +529,11 @@ local function closeCover()
 	end
 
 	freeOwnedCover()
-	closeBookInfoDbIfLoaded()
+	-- Bookshelf keeps reading from the same BookInfoManager connection;
+	-- closing it would only force a reopen on the next shelf refresh.
+	if not isBookshelfInUse() then
+		closeBookInfoDbIfLoaded()
+	end
 end
 
 -- A pending close from a previous transition must not close a newer cover,
@@ -560,6 +636,7 @@ local CLOSING_NOTICE_WORD_SETS = {
 	{ "cerrando", "libro" }, -- Spanish
 	{ "schließen", "buch" }, -- German
 	{ "schlies", "buch" }, -- German fallback without ß
+	{ "geschlossen", "buch" }, -- German ("Buch wird geschlossen…")
 	{ "закры", "кни" }, -- Russian stem fallback
 }
 
@@ -981,7 +1058,12 @@ local function showCover(filepath, options)
 
 	local action = options and options.reason or Action.open
 	local ok, err = pcall(function()
-		local cover_widget = makeCoverImageWidget(cover_bb, getLayoutModeForAction(action))
+		local layout_mode = getLayoutModeForAction(action)
+		local cover_widget = makeCoverImageWidget(cover_bb, layout_mode)
+		if layout_mode ~= LayoutMode.centered_card and isBookshelfInUse() then
+			-- Opaque full-screen cover: spares repainting the shelf underneath.
+			cover_widget.covers_fullscreen = true
+		end
 		UIManager:show(cover_widget, "full")
 		State.cover_widget = cover_widget
 		UIManager:forceRePaint()
@@ -1006,6 +1088,12 @@ local function shouldShowClosingCover(ui, full_refresh)
 	end
 
 	if full_refresh == false and ui.tearing_down and not shouldShowOnInternalTransition() then
+		return false
+	end
+
+	-- A book parked by Bookshelf closes long after the user left it, behind
+	-- the shelf; a cover then would flash over the shelf out of nowhere.
+	if isBookshelfInUse() and (isBookshelfFinishingParkedClose() or isReaderCoveredByFullscreenWidget(ui)) then
 		return false
 	end
 
