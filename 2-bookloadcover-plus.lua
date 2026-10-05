@@ -11,11 +11,56 @@ local Blitbuffer = require("ffi/blitbuffer")
 local Screen = require("device").screen
 local lfs = require("libs/libkoreader-lfs")
 local DocumentRegistry = require("document/documentregistry")
-local _ = require("gettext")
+local _core = require("gettext")
+local T = require("ffi/util").template
 
 local PLUGIN_NAME = "BookLoadCover Plus"
 local LOG_PREFIX = PLUGIN_NAME .. " patch:"
-local PATCH_VERSION = "1.3.1"
+local PATCH_VERSION = "1.4.0"
+
+-- Translations for strings that only exist in this patch. Anything not listed
+-- here falls back to KOReader's own catalog, so common terms ("Show",
+-- "Version: %1", "Advanced settings", ...) are reused from it on purpose.
+local TRANSLATIONS = {
+	pt_BR = {
+		["KOReader default (message, no cover)"] = "Padrão do KOReader (mensagem, sem capa)",
+		["Nothing (no cover, no message)"] = "Nada (sem capa, sem mensagem)",
+		["Cover + KOReader message"] = "Capa + mensagem do KOReader",
+		["Cover only"] = "Somente a capa",
+		["Same as opening"] = "Igual à abertura",
+		["Balanced (faster)"] = "Equilibrado (mais rápido)",
+		["Best quality"] = "Melhor qualidade",
+		["Fill screen (zoom/crop)"] = "Preencher a tela (zoom/recorte)",
+		["Centered card"] = "Centralizado",
+		["Cover style"] = "Estilo da capa",
+		["Cover source"] = "Fonte da capa",
+		["What appears on screen while the book is closing and KOReader returns to the file browser. Choose 'Same as opening' to reuse the opening choice."] = "O que aparece na tela enquanto o livro é fechado e o KOReader volta ao navegador de arquivos. Escolha 'Igual à abertura' para reaproveitar a opção de abertura.",
+		["What appears on screen while the book is loading."] = "O que aparece na tela enquanto o livro é carregado.",
+		["How the cover looks on screen when closing a book: stretched, fitted, zoomed or as a centered card. Choose 'Same as opening' to reuse the opening style."] = "Como a capa aparece na tela ao fechar um livro: esticada, ajustada, ampliada ou como cartão centralizado. Escolha 'Igual à abertura' para reaproveitar o estilo de abertura.",
+		["How the cover looks on screen when opening a book: stretched, fitted, zoomed or as a centered card."] = "Como a capa aparece na tela ao abrir um livro: esticada, ajustada, ampliada ou como cartão centralizado.",
+		["When opening a book"] = "Ao abrir um livro",
+		["What to show, and the cover style, while a book is opening."] = "O que mostrar, e o estilo da capa, enquanto um livro é aberto.",
+		["When closing a book"] = "Ao fechar um livro",
+		["What to show, and the cover style, while a book is closing."] = "O que mostrar, e o estilo da capa, enquanto um livro é fechado.",
+		["Centered card options"] = "Opções do cartão centralizado",
+		["Size and corners of the card. Applies to opening and closing whenever their cover style is 'Centered card'."] = "Tamanho e cantos do cartão. Vale para abertura e fechamento sempre que o estilo da capa for 'Cartão centralizado'.",
+		["Rounded corners"] = "Cantos arredondados",
+		["Balanced uses cached covers first (fast). Best quality extracts the cover from the document, which looks sharper but can slow down opening."] = "Equilibrado usa primeiro as capas em cache (rápido). Melhor qualidade extrai a capa do documento, que fica mais nítida, mas pode deixar a abertura mais lenta.",
+		["Extract cover directly from document when needed"] = "Extrair a capa do documento quando necessário",
+		["If no cached cover is found, open the document to read its cover. Slower for large books."] = "Se nenhuma capa em cache for encontrada, abre o documento para ler a capa. Mais lento em livros grandes.",
+		["Show cover on internal reload/document switch"] = "Mostrar capa ao recarregar/trocar de documento",
+		["Also show the cover when KOReader reloads the current book (e.g. after changing some document settings)."] = "Também mostra a capa quando o KOReader recarrega o livro atual (por exemplo, após alterar algumas configurações do documento).",
+		["Patch version"] = "Versão do patch",
+	},
+}
+-- European Portuguese has no table of its own; Brazilian is closer than English.
+TRANSLATIONS.pt = TRANSLATIONS.pt_BR
+
+local function _(msgid)
+	local lang = _core.current_lang or "C"
+	local tbl = TRANSLATIONS[lang] or TRANSLATIONS[lang:match("^%a+")]
+	return (tbl and tbl[msgid]) or _core(msgid)
+end
 
 local function pluginName()
 	return _("BookLoadCover Plus")
@@ -151,9 +196,9 @@ local SOURCE_MODE_LABELS = {
 }
 
 local LAYOUT_MODE_LABELS = {
-	[LayoutMode.stretch] = _("Stretch to screen"),
-	[LayoutMode.fit_black] = _("Fit to screen (black background)"),
-	[LayoutMode.fit_white] = _("Fit to screen (white background)"),
+	[LayoutMode.stretch] = _("Stretch cover to fit screen"),
+	[LayoutMode.fit_black] = T(_("Fit to screen, %1 background"), _("black")),
+	[LayoutMode.fit_white] = T(_("Fit to screen, %1 background"), _("white")),
 	[LayoutMode.fill_zoom] = _("Fill screen (zoom/crop)"),
 	[LayoutMode.centered_card] = _("Centered card"),
 	[LayoutMode.same_as_opening] = _("Same as opening"),
@@ -645,7 +690,7 @@ local closing_notice_localized
 local function getLocalizedClosingNotices()
 	if not closing_notice_localized then
 		closing_notice_localized = {}
-		for _, candidate in ipairs({ _("Closing book…"), _("Closing book..."), _("Closing book") }) do
+		for _, candidate in ipairs({ _core("Closing book…"), _core("Closing book..."), _core("Closing book") }) do
 			if type(candidate) == "string" and candidate ~= "" then
 				table.insert(closing_notice_localized, candidate:lower())
 			end
@@ -709,7 +754,7 @@ local function getCoverFromCoverImageCache(filepath)
 		return nil
 	end
 
-	local _, document_name = util.splitFilePathName(filepath)
+	local _dir, document_name = util.splitFilePathName(filepath)
 	if not document_name then
 		return nil
 	end
@@ -1140,7 +1185,7 @@ local function makeActionChoiceMenu(action, order, label_func, get_open, get_clo
 		local same = makeRadioMenu({ SAME_AS_OPENING }, label_func, get_current, set_value, on_change)[1]
 		same.text = nil
 		same.text_func = function()
-			return label_func(SAME_AS_OPENING) .. " (" .. label_func(get_open()) .. ")"
+			return T(_("%1 (%2)"), label_func(SAME_AS_OPENING), label_func(get_open()))
 		end
 		same.separator = true
 		table.insert(items, 1, same)
@@ -1184,9 +1229,9 @@ local function makeActionMenu(action)
 		{
 			text_func = function()
 				if is_close and getCloseModeSetting() == Mode.same_as_opening then
-					return _("Show") .. ": " .. modeLabel(Mode.same_as_opening)
+					return T(_("%1: %2"), _("Show"), modeLabel(Mode.same_as_opening))
 				end
-				return _("Show") .. ": " .. modeLabel(get_mode())
+				return T(_("%1: %2"), _("Show"), modeLabel(get_mode()))
 			end,
 			help_text = is_close
 					and _("What appears on screen while the book is closing and KOReader returns to the file browser. Choose 'Same as opening' to reuse the opening choice.")
@@ -1197,9 +1242,9 @@ local function makeActionMenu(action)
 		{
 			text_func = function()
 				if is_close and getCloseLayoutSetting() == LayoutMode.same_as_opening then
-					return _("Cover style") .. ": " .. layoutModeLabel(LayoutMode.same_as_opening)
+					return T(_("%1: %2"), _("Cover style"), layoutModeLabel(LayoutMode.same_as_opening))
 				end
-				return _("Cover style") .. ": " .. layoutModeLabel(getLayoutModeForAction(action))
+				return T(_("%1: %2"), _("Cover style"), layoutModeLabel(getLayoutModeForAction(action)))
 			end,
 			help_text = is_close
 					and _("How the cover looks on screen when closing a book: stretched, fitted, zoomed or as a centered card. Choose 'Same as opening' to reuse the opening style.")
@@ -1215,7 +1260,7 @@ end
 
 local function showVersionInfo()
 	UIManager:show(InfoMessage:new({
-		text = pluginName() .. "\n" .. _("Version") .. ": v" .. PATCH_VERSION,
+		text = pluginName() .. "\n" .. T(_("Version: %1"), "v" .. PATCH_VERSION),
 		timeout = 3,
 	}))
 end
@@ -1251,7 +1296,7 @@ function BookLoadCoverMenu:addToMainMenu(menu_items)
 				sub_item_table = {
 					{
 						text_func = function()
-							return _("Size") .. ": " .. getCardSizePercent() .. "%"
+							return _("Size:") .. " " .. getCardSizePercent() .. "%"
 						end,
 						keep_menu_open = true,
 						sub_item_table = makeCardSizeMenu(),
@@ -1269,14 +1314,14 @@ function BookLoadCoverMenu:addToMainMenu(menu_items)
 			},
 			{
 				text_func = function()
-					return _("Cover source") .. ": " .. sourceModeLabel(getCoverSourceMode())
+					return T(_("%1: %2"), _("Cover source"), sourceModeLabel(getCoverSourceMode()))
 				end,
 				help_text = _("Balanced uses cached covers first (fast). Best quality extracts the cover from the document, which looks sharper but can slow down opening."),
 				keep_menu_open = true,
 				sub_item_table = makeRadioMenu(SOURCE_MODE_ORDER, sourceModeLabel, getCoverSourceMode, setCoverSourceMode),
 			},
 			{
-				text = _("Advanced"),
+				text = _("Advanced settings"),
 				keep_menu_open = true,
 				separator = true,
 				sub_item_table = {
@@ -1304,7 +1349,7 @@ function BookLoadCoverMenu:addToMainMenu(menu_items)
 			},
 			{
 				text_func = function()
-					return _("Patch version") .. ": v" .. PATCH_VERSION
+					return T(_("%1: %2"), _("Patch version"), "v" .. PATCH_VERSION)
 				end,
 				keep_menu_open = false,
 				callback = showVersionInfo,
